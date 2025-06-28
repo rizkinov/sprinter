@@ -1,26 +1,6 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import type { 
-  Task, 
-  Project, 
-  Milestone, 
-  TaskFormData, 
-  MilestoneFormData, 
-  ProjectFormData,
-  DatePickerProps,
-  TabButtonProps,
-  StatusBadgeProps,
-  TaskStatus,
-  TaskPriority,
-  TaskCategory,
-  MilestoneStatus,
-  CreateProjectData,
-  CreateTaskData,
-  CreateMilestoneData,
-  UpdateTaskData,
-  UpdateMilestoneData
-} from '@/types'
 import { 
   BarChart3, 
   Kanban, 
@@ -56,7 +36,6 @@ import KanbanColumn from '@/components/KanbanColumn'
 import ConfirmationDialog from '@/components/ConfirmationDialog'
 import SearchAndFilter from '@/components/SearchAndFilter'
 import BulkActionsBar from '@/components/BulkActionsBar'
-import LazyLoader from '@/components/LazyLoader'
 import { exportTasks, exportMilestones, exportProject, type ExportFormat } from '@/lib/exportUtils'
 
 export default function Dashboard() {
@@ -226,6 +205,7 @@ export default function Dashboard() {
           targetDate: milestone.target_date,
           status: milestone.status,
           progress: milestone.progress,
+          createdAt: milestone.created_at,
           tasks: [] // We'll populate this later if needed
         })))
       } else {
@@ -299,6 +279,7 @@ export default function Dashboard() {
               targetDate: milestone.target_date,
               status: milestone.status,
               progress: milestone.progress,
+              createdAt: milestone.created_at,
               tasks: []
             }])
           }
@@ -357,7 +338,7 @@ export default function Dashboard() {
       }
     }
 
-  const updateTaskInDb = async (taskId: string, updates: any) => {
+  const updateTaskInDb = useCallback(async (taskId: string, updates: Record<string, any>) => {
     if (!user) return
 
     try {
@@ -382,7 +363,7 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Error updating task:', error)
     }
-  }
+  }, [])
 
   // Removed unused deleteTaskFromDb function
 
@@ -395,12 +376,12 @@ export default function Dashboard() {
     }
   }
   
-  const handleEditTask = useCallback((task: any) => {
+  const handleEditTask = useCallback((task: { id: string; title: string; description?: string; category: string; priority: string; status: string }) => {
     setEditingTask(task)
     setShowEditModal(true)
   }, [])
 
-  const handleDeleteTask = useCallback((task: any) => {
+  const handleDeleteTask = useCallback((task: { id: string; title: string }) => {
     setTaskToDelete(task)
     setShowDeleteConfirmation(true)
   }, [])
@@ -440,7 +421,7 @@ export default function Dashboard() {
     setCategoryFilter('all')
   }, [])
 
-  const handleToggleSelect = useCallback((task: any) => {
+  const handleToggleSelect = useCallback((task: { id: string }) => {
     setSelectedTasks(prev => 
       prev.includes(task.id) 
         ? prev.filter(id => id !== task.id)
@@ -549,15 +530,38 @@ export default function Dashboard() {
 
   // Export handlers
   const handleExportTasks = useCallback((format: ExportFormat) => {
-    exportTasks(filteredTasks, format, projectData.projectName)
+    try {
+      console.log('Exporting tasks:', { count: filteredTasks.length, format, projectName: projectData.projectName })
+      exportTasks(filteredTasks, format, projectData.projectName || 'Untitled_Project')
+    } catch (error) {
+      console.error('Error exporting tasks:', error)
+      setError('Failed to export tasks. Please try again.')
+    }
   }, [filteredTasks, projectData.projectName])
 
   const handleExportMilestones = useCallback((format: ExportFormat) => {
-    exportMilestones(milestones, format, projectData.projectName)
+    try {
+      console.log('Exporting milestones:', { count: milestones.length, format, projectName: projectData.projectName })
+      exportMilestones(milestones, format, projectData.projectName || 'Untitled_Project')
+    } catch (error) {
+      console.error('Error exporting milestones:', error)
+      setError('Failed to export milestones. Please try again.')
+    }
   }, [milestones, projectData.projectName])
 
   const handleExportProject = useCallback((format: ExportFormat) => {
-    exportProject(projectData, tasks, milestones, format)
+    try {
+      console.log('Exporting project:', { 
+        tasksCount: tasks.length, 
+        milestonesCount: milestones.length, 
+        format, 
+        projectName: projectData.projectName 
+      })
+      exportProject(projectData, tasks, milestones, format)
+    } catch (error) {
+      console.error('Error exporting project:', error)
+      setError('Failed to export project. Please try again.')
+    }
   }, [projectData, tasks, milestones])
 
   const handleCloseEditModal = () => {
@@ -679,16 +683,24 @@ export default function Dashboard() {
   }, [])
 
   // DatePicker component
-  const DatePicker = ({ value, onChange, placeholder = "Pick a date", name }: any) => {
+  const DatePicker = ({ value, onChange, placeholder = "Pick a date", name }: {
+    value?: Date;
+    onChange: (date: Date | undefined) => void;
+    placeholder?: string;
+    name?: string;
+  }) => {
     const [open, setOpen] = useState(false)
-    const [selectedDate, setSelectedDate] = useState<Date | undefined>(
-      value ? new Date(value) : undefined
-    )
+    const [selectedDate, setSelectedDate] = useState<Date | undefined>(value)
+
+    // Sync internal state with value prop
+    React.useEffect(() => {
+      setSelectedDate(value)
+    }, [value])
 
     const handleDateSelect = (date: Date | undefined) => {
       setSelectedDate(date)
       if (onChange) {
-        onChange(date ? format(date, 'yyyy-MM-dd') : '')
+        onChange(date)
       }
       setOpen(false)
     }
@@ -698,13 +710,15 @@ export default function Dashboard() {
         <PopoverTrigger asChild>
           <Button
             variant="outline"
-            className="w-full justify-start text-left font-normal"
+            className="w-full justify-start text-left font-normal cursor-pointer"
+            onClick={() => setOpen(!open)}
+            type="button"
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
             {selectedDate ? format(selectedDate, 'PPP') : placeholder}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
+        <PopoverContent className="w-auto p-0 z-[70]" align="start">
           <Calendar
             mode="single"
             selected={selectedDate}
@@ -723,7 +737,13 @@ export default function Dashboard() {
     )
   }
 
-  const TabButton = ({ id, label, icon: Icon, active, onClick }: any) => (
+  const TabButton = ({ id, label, icon: Icon, active, onClick }: {
+    id: string;
+    label: string;
+    icon: React.ComponentType<{ size?: number; className?: string }>;
+    active: boolean;
+    onClick: (id: string) => void;
+  }) => (
     <button
       onClick={() => onClick(id)}
       className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 focus:ring-2 focus:ring-gray-500 focus:outline-none ${
@@ -744,7 +764,10 @@ export default function Dashboard() {
 
   // Removed unused ProgressBar component
 
-  const StatusBadge = ({ status, className = '' }: any) => {
+  const StatusBadge = ({ status, className = '' }: {
+    status: string;
+    className?: string;
+  }) => {
     const styles = {
       'on-track': 'bg-green-100 text-green-800',
       'upcoming': 'bg-gray-100 text-gray-800',
@@ -997,6 +1020,7 @@ export default function Dashboard() {
           targetDate: milestone.target_date,
           status: milestone.status,
           progress: milestone.progress,
+          createdAt: milestone.created_at,
           tasks: []
         }
         setMilestones(prev => [...prev, newMilestone])
@@ -1066,7 +1090,8 @@ export default function Dashboard() {
                 description: editFormData.description,
                 targetDate: editFormData.targetDate,
                 status: calculatedStatus,
-                progress: calculatedProgress
+                progress: calculatedProgress,
+                createdAt: milestone.createdAt // Preserve existing createdAt
               }
             : milestone
         ))
@@ -1183,6 +1208,8 @@ export default function Dashboard() {
   }
 
   const AddMilestoneModal = () => {
+    const [targetDate, setTargetDate] = useState<Date | undefined>(undefined)
+
     if (!showAddMilestoneModal) return null
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -1192,11 +1219,17 @@ export default function Dashboard() {
       const milestoneInfo = {
         title: formData.get('title') as string,
         description: formData.get('description') as string,
-        targetDate: formData.get('targetDate') as string
+        targetDate: targetDate ? targetDate.toISOString().split('T')[0] : ''
+      }
+
+      if (!milestoneInfo.title || !milestoneInfo.targetDate) {
+        alert('Please fill in all required fields')
+        return
       }
 
       await createNewMilestone(milestoneInfo)
       setShowAddMilestoneModal(false)
+      setTargetDate(undefined) // Reset form
     }
 
     return (
@@ -1242,6 +1275,8 @@ export default function Dashboard() {
               <DatePicker
                 name="targetDate"
                 placeholder="Select target date"
+                value={targetDate}
+                onChange={setTargetDate}
               />
             </div>
 
@@ -1267,6 +1302,10 @@ export default function Dashboard() {
   }
 
   const ProjectSetupModal = () => {
+    const [startDate, setStartDate] = useState<Date | undefined>(undefined)
+    const [targetLaunchDate, setTargetLaunchDate] = useState<Date | undefined>(undefined)
+    const [milestoneTargetDate, setMilestoneTargetDate] = useState<Date | undefined>(undefined)
+
     if (!showProjectSetup) return null
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -1276,16 +1315,20 @@ export default function Dashboard() {
       const projectInfo = {
         name: formData.get('projectName') as string,
         description: formData.get('description') as string,
-        startDate: formData.get('startDate') as string,
-        targetLaunchDate: formData.get('targetLaunchDate') as string,
+        startDate: startDate ? startDate.toISOString().split('T')[0] : '',
+        targetLaunchDate: targetLaunchDate ? targetLaunchDate.toISOString().split('T')[0] : '',
         totalSprints: parseInt(formData.get('totalSprints') as string) || 16,
         milestoneTitle: formData.get('milestoneTitle') as string,
         milestoneDescription: formData.get('milestoneDescription') as string,
-        milestoneTargetDate: formData.get('milestoneTargetDate') as string
+        milestoneTargetDate: milestoneTargetDate ? milestoneTargetDate.toISOString().split('T')[0] : ''
       }
 
       await createNewProject(projectInfo)
       setShowProjectSetup(false)
+      // Reset form
+      setStartDate(undefined)
+      setTargetLaunchDate(undefined)
+      setMilestoneTargetDate(undefined)
     }
 
     return (
@@ -1332,6 +1375,8 @@ export default function Dashboard() {
                 <DatePicker
                   name="startDate"
                   placeholder="Select start date"
+                  value={startDate}
+                  onChange={setStartDate}
                 />
               </div>
 
@@ -1340,6 +1385,8 @@ export default function Dashboard() {
                 <DatePicker
                   name="targetLaunchDate"
                   placeholder="Select launch date"
+                  value={targetLaunchDate}
+                  onChange={setTargetLaunchDate}
                 />
               </div>
             </div>
@@ -1388,6 +1435,8 @@ export default function Dashboard() {
                   <DatePicker
                     name="milestoneTargetDate"
                     placeholder="Select milestone date"
+                    value={milestoneTargetDate}
+                    onChange={setMilestoneTargetDate}
                   />
                 </div>
               </div>
@@ -1415,6 +1464,8 @@ export default function Dashboard() {
   }
 
   const AddTaskModal = () => {
+    const [dueDate, setDueDate] = useState<Date | undefined>(undefined)
+
     if (!showAddModal) return null
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -1427,7 +1478,7 @@ export default function Dashboard() {
         category: formData.get('category') as string,
         priority: formData.get('priority') as string,
         estimatedHours: parseInt(formData.get('estimatedHours') as string) || 0,
-        dueDate: formData.get('dueDate') as string,
+        dueDate: dueDate ? dueDate.toISOString().split('T')[0] : '',
         sprintWeek: parseInt(formData.get('sprintWeek') as string) || 1
       }
 
@@ -1438,6 +1489,7 @@ export default function Dashboard() {
 
       await createNewTask(taskInfo)
       setShowAddModal(false)
+      setDueDate(undefined) // Reset form
     }
 
     return (
@@ -1561,6 +1613,8 @@ export default function Dashboard() {
                 <DatePicker
                   name="dueDate"
                   placeholder="Select due date"
+                  value={dueDate}
+                  onChange={setDueDate}
                 />
               </div>
 
@@ -1826,7 +1880,11 @@ export default function Dashboard() {
 
               {/* Action Buttons */}
               <div className="flex items-center gap-2">
-                <button className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-1.5 rounded text-sm font-medium flex items-center gap-1.5 transition-colors">
+                <button 
+                  onClick={() => handleExportProject('json')}
+                  className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-1.5 rounded text-sm font-medium flex items-center gap-1.5 transition-colors"
+                  title="Export project as JSON"
+                >
                   <Download size={14} />
                   Export
                 </button>
@@ -2085,7 +2143,6 @@ export default function Dashboard() {
                        Object.entries(categoryGroups).map(([category, data]) => {
                          const categoryData = data as { total: number; completed: number }
                          const Icon = getCategoryIcon(category)
-                         const completionPercentage = safePercentage(categoryData.completed, categoryData.total)
                         
                         return (
                           <div key={category} className="flex items-center gap-3 mb-2">
@@ -2231,11 +2288,18 @@ export default function Dashboard() {
                     >
                       Add Task
                     </LoadingButton>
-                    <button className="w-full text-left px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100 rounded-lg flex items-center gap-2 text-gray-700">
+                    <button 
+                      onClick={() => setActiveTab('kanban')}
+                      className="w-full text-left px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100 rounded-lg flex items-center gap-2 text-gray-700"
+                    >
                       <Kanban size={14} />
                       View Kanban
                     </button>
-                    <button className="w-full text-left px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100 rounded-lg flex items-center gap-2 text-gray-700">
+                    <button 
+                      onClick={() => handleExportProject('json')}
+                      className="w-full text-left px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100 rounded-lg flex items-center gap-2 text-gray-700"
+                      title="Export project data as JSON"
+                    >
                       <Download size={14} />
                       Export Data
                     </button>
@@ -2401,60 +2465,50 @@ export default function Dashboard() {
                   <p className="text-sm text-gray-500 mt-1">Track your project progress and performance metrics</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <select 
-                      onChange={(e) => {
-                        const format = e.target.value as ExportFormat
-                        if (format) {
-                          handleExportProject(format)
-                          e.target.value = '' // Reset selection
-                        }
-                      }}
-                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium appearance-none pr-8 cursor-pointer focus:ring-2 focus:ring-gray-500 focus:outline-none"
-                      defaultValue=""
-                    >
-                      <option value="" disabled>Export Project</option>
-                      <option value="json">Export as JSON</option>
-                      <option value="csv">Export as CSV</option>
-                    </select>
-                    <Download size={16} className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none" />
-                  </div>
-                  <div className="relative">
-                    <select 
-                      onChange={(e) => {
-                        const format = e.target.value as ExportFormat
-                        if (format) {
-                          handleExportTasks(format)
-                          e.target.value = '' // Reset selection
-                        }
-                      }}
-                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium appearance-none pr-8 cursor-pointer focus:ring-2 focus:ring-gray-500 focus:outline-none"
-                      defaultValue=""
-                    >
-                      <option value="" disabled>Export Tasks</option>
-                      <option value="json">Tasks as JSON</option>
-                      <option value="csv">Tasks as CSV</option>
-                    </select>
-                    <Download size={16} className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none" />
-                  </div>
-                  <div className="relative">
-                    <select 
-                      onChange={(e) => {
-                        const format = e.target.value as ExportFormat
-                        if (format) {
-                          handleExportMilestones(format)
-                          e.target.value = '' // Reset selection
-                        }
-                      }}
-                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium appearance-none pr-8 cursor-pointer focus:ring-2 focus:ring-gray-500 focus:outline-none"
-                      defaultValue=""
-                    >
-                      <option value="" disabled>Export Milestones</option>
-                      <option value="json">Milestones as JSON</option>
-                      <option value="csv">Milestones as CSV</option>
-                    </select>
-                    <Download size={16} className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none" />
-                  </div>
+                  <Select onValueChange={(value: ExportFormat) => {
+                    if (value) {
+                      handleExportProject(value)
+                    }
+                  }}>
+                    <SelectTrigger className="bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-200 focus:ring-gray-500">
+                      <Download size={16} className="text-gray-500" />
+                      <SelectValue placeholder="Export Project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="json">Export as JSON</SelectItem>
+                      <SelectItem value="csv">Export as CSV</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select onValueChange={(value: ExportFormat) => {
+                    if (value) {
+                      handleExportTasks(value)
+                    }
+                  }}>
+                    <SelectTrigger className="bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-200 focus:ring-gray-500">
+                      <Download size={16} className="text-gray-500" />
+                      <SelectValue placeholder="Export Tasks" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="json">Tasks as JSON</SelectItem>
+                      <SelectItem value="csv">Tasks as CSV</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select onValueChange={(value: ExportFormat) => {
+                    if (value) {
+                      handleExportMilestones(value)
+                    }
+                  }}>
+                    <SelectTrigger className="bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-200 focus:ring-gray-500">
+                      <Download size={16} className="text-gray-500" />
+                      <SelectValue placeholder="Export Milestones" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="json">Milestones as JSON</SelectItem>
+                      <SelectItem value="csv">Milestones as CSV</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               

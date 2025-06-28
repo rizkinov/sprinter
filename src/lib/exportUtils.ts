@@ -20,19 +20,35 @@ export function convertToCSV(data: any[], headers: string[]): string {
 
 // Helper function to download a file
 export function downloadFile(content: string, filename: string, mimeType: string): void {
-  const blob = new Blob([content], { type: mimeType })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
+  try {
+    console.log('Creating download:', { filename, mimeType, contentLength: content.length })
+    const blob = new Blob([content], { type: mimeType })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    console.log('Download initiated successfully')
+  } catch (error) {
+    console.error('Error creating download:', error)
+    throw error
+  }
 }
 
 // Export tasks data
 export function exportTasks(tasks: any[], exportFormat: ExportFormat, projectName: string = 'Project'): void {
+  console.log('exportTasks called with:', { tasksCount: tasks.length, exportFormat, projectName })
+  
+  if (!tasks || tasks.length === 0) {
+    console.warn('No tasks to export')
+    alert('No tasks available to export')
+    return
+  }
+  
   const timestamp = new Date().toISOString().slice(0, 16).replace(/:/g, '-')
   const filename = `${projectName.replace(/[^a-zA-Z0-9]/g, '_')}_tasks_${timestamp}`
   
@@ -44,8 +60,8 @@ export function exportTasks(tasks: any[], exportFormat: ExportFormat, projectNam
     category: task.category,
     status: task.status,
     priority: task.priority,
-    estimated_hours: task.estimatedHours,
-    actual_hours: task.actualHours,
+    estimated_hours: task.estimatedHours || 0,
+    actual_hours: task.actualHours || 0,
     due_date: task.dueDate || '',
     created_at: task.createdAt || '',
     completion_percentage: task.status === 'Completed' ? 100 : 
@@ -76,6 +92,14 @@ export function exportTasks(tasks: any[], exportFormat: ExportFormat, projectNam
 
 // Export milestones data
 export function exportMilestones(milestones: any[], exportFormat: ExportFormat, projectName: string = 'Project'): void {
+  console.log('exportMilestones called with:', { milestonesCount: milestones.length, exportFormat, projectName })
+  
+  if (!milestones || milestones.length === 0) {
+    console.warn('No milestones to export')
+    alert('No milestones available to export')
+    return
+  }
+  
   const timestamp = new Date().toISOString().slice(0, 16).replace(/:/g, '-')
   const filename = `${projectName.replace(/[^a-zA-Z0-9]/g, '_')}_milestones_${timestamp}`
   
@@ -84,7 +108,7 @@ export function exportMilestones(milestones: any[], exportFormat: ExportFormat, 
     title: milestone.title,
     description: milestone.description || '',
     status: milestone.status,
-    progress: milestone.progress,
+    progress: milestone.progress || 0,
     target_date: milestone.targetDate || '',
     created_at: milestone.createdAt || ''
   }))
@@ -115,6 +139,13 @@ export function exportProject(
   milestones: any[], 
   exportFormat: ExportFormat
 ): void {
+  console.log('exportProject called with:', { 
+    projectName: projectData.projectName, 
+    tasksCount: tasks.length, 
+    milestonesCount: milestones.length, 
+    exportFormat 
+  })
+  
   const timestamp = new Date().toISOString().slice(0, 16).replace(/:/g, '-')
   const projectName = projectData.projectName || 'Project'
   const filename = `${projectName.replace(/[^a-zA-Z0-9]/g, '_')}_complete_${timestamp}`
@@ -143,8 +174,8 @@ export function exportProject(
       category: task.category,
       status: task.status,
       priority: task.priority,
-      estimated_hours: task.estimatedHours,
-      actual_hours: task.actualHours,
+      estimated_hours: task.estimatedHours || 0,
+      actual_hours: task.actualHours || 0,
       due_date: task.dueDate || '',
       created_at: task.createdAt || ''
     })),
@@ -153,7 +184,7 @@ export function exportProject(
       title: milestone.title,
       description: milestone.description || '',
       status: milestone.status,
-      progress: milestone.progress,
+      progress: milestone.progress || 0,
       target_date: milestone.targetDate || '',
       created_at: milestone.createdAt || ''
     })),
