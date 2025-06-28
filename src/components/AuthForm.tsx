@@ -41,9 +41,9 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           onAuthSuccess()
         }
       }
-    } catch (err) {
-      setError('An unexpected error occurred')
-    } finally {
+          } catch {
+        setError('An unexpected error occurred')
+      } finally {
       setLoading(false)
     }
   }
@@ -125,7 +125,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           >
             {isSignUp 
               ? 'Already have an account? Sign in' 
-              : "Don't have an account? Sign up"
+                              : "Don&apos;t have an account? Sign up"
             }
           </button>
         </div>

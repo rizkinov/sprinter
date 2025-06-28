@@ -1,6 +1,26 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import type { 
+  Task, 
+  Project, 
+  Milestone, 
+  TaskFormData, 
+  MilestoneFormData, 
+  ProjectFormData,
+  DatePickerProps,
+  TabButtonProps,
+  StatusBadgeProps,
+  TaskStatus,
+  TaskPriority,
+  TaskCategory,
+  MilestoneStatus,
+  CreateProjectData,
+  CreateTaskData,
+  CreateMilestoneData,
+  UpdateTaskData,
+  UpdateMilestoneData
+} from '@/types'
 import { 
   BarChart3, 
   Kanban, 
@@ -29,6 +49,15 @@ import { signOut } from '@/lib/supabase'
 import { db } from '@/lib/database'
 import AuthForm from '@/components/AuthForm'
 import { useAuth } from '@/hooks/useAuth'
+import ErrorBanner from '@/components/ErrorBanner'
+import LoadingOverlay from '@/components/LoadingOverlay'
+import LoadingButton from '@/components/LoadingButton'
+import KanbanColumn from '@/components/KanbanColumn'
+import ConfirmationDialog from '@/components/ConfirmationDialog'
+import SearchAndFilter from '@/components/SearchAndFilter'
+import BulkActionsBar from '@/components/BulkActionsBar'
+import LazyLoader from '@/components/LazyLoader'
+import { exportTasks, exportMilestones, exportProject, type ExportFormat } from '@/lib/exportUtils'
 
 export default function Dashboard() {
   const { user, loading } = useAuth()
@@ -44,6 +73,32 @@ export default function Dashboard() {
   const [showEditMilestoneModal, setShowEditMilestoneModal] = useState(false)
   const [editingProjectName, setEditingProjectName] = useState(false)
   const [draggedTask, setDraggedTask] = useState<any>(null)
+  
+  // Loading and error states
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [isCreatingTask, setIsCreatingTask] = useState(false)
+  const [isCreatingMilestone, setIsCreatingMilestone] = useState(false)
+  const [isCreatingProject, setIsCreatingProject] = useState(false)
+  const [isDeletingTask, setIsDeletingTask] = useState(false)
+  
+  // Delete confirmation state
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
+  const [taskToDelete, setTaskToDelete] = useState<any>(null)
+  
+  // Search and filter state
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [priorityFilter, setPriorityFilter] = useState('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [showFilters, setShowFilters] = useState(false)
+  
+  // Bulk selection state
+  const [selectedTasks, setSelectedTasks] = useState<string[]>([])
+  const [showSelection, setShowSelection] = useState(false)
+  const [isBulkOperating, setIsBulkOperating] = useState(false)
+  const [showBulkDeleteConfirmation, setShowBulkDeleteConfirmation] = useState(false)
+  
   const [projectData, setProjectData] = useState({
     projectName: '',
     startDate: '',
@@ -57,9 +112,41 @@ export default function Dashboard() {
   const [currentProject, setCurrentProject] = useState<any>(null)
   const daysUntilLaunch = projectData.targetLaunchDate ? calculateDaysUntilLaunch(projectData.targetLaunchDate) : 0
   
-  const completedTasks = tasks.filter(task => task.status === 'Completed').length
-  const totalHours = tasks.reduce((sum, task) => sum + (task.estimatedHours || 0), 0)
-  const completedHours = tasks.filter(task => task.status === 'Completed').reduce((sum, task) => sum + (task.actualHours || 0), 0)
+  // Memoized expensive calculations
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(task => {
+      const matchesSearch = searchTerm === '' || 
+        task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        task.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        task.category.toLowerCase().includes(searchTerm.toLowerCase())
+      
+      const matchesStatus = statusFilter === 'all' || task.status === statusFilter
+      const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter
+      const matchesCategory = categoryFilter === 'all' || task.category === categoryFilter
+      
+      return matchesSearch && matchesStatus && matchesPriority && matchesCategory
+    })
+  }, [tasks, searchTerm, statusFilter, priorityFilter, categoryFilter])
+  
+  // Memoized categories for filter dropdown
+  const availableCategories = useMemo(() => {
+    return [...new Set(tasks.map(task => task.category))].sort()
+  }, [tasks])
+  
+  // Memoized analytics calculations
+  const taskAnalytics = useMemo(() => {
+    const completed = tasks.filter(task => task.status === 'Completed').length
+    const total = tasks.reduce((sum, task) => sum + (task.estimatedHours || 0), 0)
+    const completedHours = tasks.filter(task => task.status === 'Completed').reduce((sum, task) => sum + (task.actualHours || 0), 0)
+    
+    return {
+      completedTasks: completed,
+      totalHours: total,
+      completedHours
+    }
+  }, [tasks])
+  
+  const { completedTasks, totalHours, completedHours } = taskAnalytics
   
   // Safe calculation helpers
   const safePercentage = (numerator: number, denominator: number) => {
@@ -93,6 +180,8 @@ export default function Dashboard() {
   }, [user])
 
   const loadUserData = async (userId: string) => {
+    setIsLoading(true)
+    setError(null)
     try {
       // Load user's projects
       const projects = await db.getProjects(userId)
@@ -153,14 +242,19 @@ export default function Dashboard() {
           totalSprints: 16
         })
       }
-    } catch (error) {
-      console.error('Error loading user data:', error)
+          } catch (error) {
+        console.error('Error loading user data:', error)
+        setError('Failed to load your data. Please try refreshing the page.')
+      } finally {
+        setIsLoading(false)
+      }
     }
-  }
 
   const createNewProject = async (projectInfo: any) => {
     if (!user) return
 
+    setIsCreatingProject(true)
+    setError(null)
     try {
       const project = await db.createProject({
         user_id: user.id,
@@ -210,14 +304,19 @@ export default function Dashboard() {
           }
         }
       }
-    } catch (error) {
-      console.error('Error creating project:', error)
+          } catch (error) {
+        console.error('Error creating project:', error)
+        setError('Failed to create project. Please try again.')
+      } finally {
+        setIsCreatingProject(false)
+      }
     }
-  }
 
   const createNewTask = async (taskInfo: any) => {
     if (!user || !currentProject) return
 
+    setIsCreatingTask(true)
+    setError(null)
     try {
       const task = await db.createTask({
         project_id: currentProject.id,
@@ -250,10 +349,13 @@ export default function Dashboard() {
         }
         setTasks(prev => [...prev, newTask])
       }
-    } catch (error) {
-      console.error('Error creating task:', error)
+          } catch (error) {
+        console.error('Error creating task:', error)
+        setError('Failed to create task. Please try again.')
+      } finally {
+        setIsCreatingTask(false)
+      }
     }
-  }
 
   const updateTaskInDb = async (taskId: string, updates: any) => {
     if (!user) return
@@ -282,16 +384,7 @@ export default function Dashboard() {
     }
   }
 
-  const deleteTaskFromDb = async (taskId: string) => {
-    if (!user) return
-
-    try {
-      await db.deleteTask(taskId, user.id)
-      setTasks(prev => prev.filter(task => task.id !== taskId))
-    } catch (error) {
-      console.error('Error deleting task:', error)
-    }
-  }
+  // Removed unused deleteTaskFromDb function
 
   const handleSignOut = async () => {
     try {
@@ -302,10 +395,170 @@ export default function Dashboard() {
     }
   }
   
-  const handleEditTask = (task: any) => {
+  const handleEditTask = useCallback((task: any) => {
     setEditingTask(task)
     setShowEditModal(true)
+  }, [])
+
+  const handleDeleteTask = useCallback((task: any) => {
+    setTaskToDelete(task)
+    setShowDeleteConfirmation(true)
+  }, [])
+
+  const handleConfirmDeleteTask = async () => {
+    if (!user || !taskToDelete) return
+
+    setIsDeletingTask(true)
+    setError(null)
+    try {
+      await db.deleteTask(taskToDelete.id, user.id)
+      
+      // Remove task from local state
+      setTasks(prev => prev.filter(t => t.id !== taskToDelete.id))
+      
+      // Close confirmation dialog
+      setShowDeleteConfirmation(false)
+      setTaskToDelete(null)
+    } catch (error) {
+      console.error('Error deleting task:', error)
+      setError('Failed to delete task. Please try again.')
+    } finally {
+      setIsDeletingTask(false)
+    }
   }
+
+  const handleCancelDeleteTask = () => {
+    setShowDeleteConfirmation(false)
+    setTaskToDelete(null)
+  }
+
+  // Memoized event handlers to prevent unnecessary re-renders
+  const handleClearFilters = useCallback(() => {
+    setSearchTerm('')
+    setStatusFilter('all')
+    setPriorityFilter('all')
+    setCategoryFilter('all')
+  }, [])
+
+  const handleToggleSelect = useCallback((task: any) => {
+    setSelectedTasks(prev => 
+      prev.includes(task.id) 
+        ? prev.filter(id => id !== task.id)
+        : [...prev, task.id]
+    )
+  }, [])
+
+  const handleDeselectAll = useCallback(() => {
+    setSelectedTasks([])
+  }, [])
+
+  const handleBulkStatusChange = async (newStatus: 'Not Started' | 'In Progress' | 'Completed' | 'Blocked') => {
+    if (!user || selectedTasks.length === 0) return
+
+    setIsBulkOperating(true)
+    setError(null)
+    try {
+      // Update all selected tasks
+      await Promise.all(
+        selectedTasks.map(taskId => 
+          db.updateTask(taskId, { status: newStatus, user_id: user.id })
+        )
+      )
+      
+      // Update local state
+      setTasks(prev => prev.map(task => 
+        selectedTasks.includes(task.id) 
+          ? { ...task, status: newStatus }
+          : task
+      ))
+      
+      // Clear selection
+      setSelectedTasks([])
+    } catch (error) {
+      console.error('Error updating tasks:', error)
+      setError('Failed to update tasks. Please try again.')
+    } finally {
+      setIsBulkOperating(false)
+    }
+  }
+
+  const handleBulkPriorityChange = async (newPriority: 'High' | 'Medium' | 'Low') => {
+    if (!user || selectedTasks.length === 0) return
+
+    setIsBulkOperating(true)
+    setError(null)
+    try {
+      // Update all selected tasks
+      await Promise.all(
+        selectedTasks.map(taskId => 
+          db.updateTask(taskId, { priority: newPriority, user_id: user.id })
+        )
+      )
+      
+      // Update local state
+      setTasks(prev => prev.map(task => 
+        selectedTasks.includes(task.id) 
+          ? { ...task, priority: newPriority }
+          : task
+      ))
+      
+      // Clear selection
+      setSelectedTasks([])
+    } catch (error) {
+      console.error('Error updating tasks:', error)
+      setError('Failed to update tasks. Please try again.')
+    } finally {
+      setIsBulkOperating(false)
+    }
+  }
+
+  const handleBulkDelete = () => {
+    setShowBulkDeleteConfirmation(true)
+  }
+
+  const handleConfirmBulkDelete = async () => {
+    if (!user || selectedTasks.length === 0) return
+
+    setIsBulkOperating(true)
+    setError(null)
+    try {
+      // Delete all selected tasks
+      await Promise.all(
+        selectedTasks.map(taskId => 
+          db.deleteTask(taskId, user.id)
+        )
+      )
+      
+      // Remove tasks from local state
+      setTasks(prev => prev.filter(task => !selectedTasks.includes(task.id)))
+      
+      // Clear selection and close confirmation
+      setSelectedTasks([])
+      setShowBulkDeleteConfirmation(false)
+    } catch (error) {
+      console.error('Error deleting tasks:', error)
+      setError('Failed to delete tasks. Please try again.')
+    } finally {
+      setIsBulkOperating(false)
+    }
+  }
+
+  const handleCancelBulkDelete = () => {
+    setShowBulkDeleteConfirmation(false)
+  }
+
+  // Export handlers
+  const handleExportTasks = useCallback((format: ExportFormat) => {
+    exportTasks(filteredTasks, format, projectData.projectName)
+  }, [filteredTasks, projectData.projectName])
+
+  const handleExportMilestones = useCallback((format: ExportFormat) => {
+    exportMilestones(milestones, format, projectData.projectName)
+  }, [milestones, projectData.projectName])
+
+  const handleExportProject = useCallback((format: ExportFormat) => {
+    exportProject(projectData, tasks, milestones, format)
+  }, [projectData, tasks, milestones])
 
   const handleCloseEditModal = () => {
     setShowEditModal(false)
@@ -316,9 +569,7 @@ export default function Dashboard() {
     setShowAddModal(true)
   }
 
-  const handleCloseAddModal = () => {
-    setShowAddModal(false)
-  }
+  // Removed unused handleCloseAddModal function
 
   const handleAddMilestone = () => {
     setShowAddMilestoneModal(true)
@@ -388,24 +639,24 @@ export default function Dashboard() {
       await db.updateProject(currentProject.id, { name: newName.trim() })
       
       setProjectData(prev => ({ ...prev, projectName: newName.trim() }))
-      setCurrentProject(prev => ({ ...prev, name: newName.trim() }))
+      setCurrentProject((prev: any) => ({ ...prev, name: newName.trim() }))
       setEditingProjectName(false)
     } catch (error) {
       console.error('Error updating project name:', error)
     }
   }
 
-  const handleDragStart = (e: React.DragEvent, task: any) => {
+  const handleDragStart = useCallback((e: React.DragEvent, task: any) => {
     setDraggedTask(task)
     e.dataTransfer.effectAllowed = 'move'
-  }
+  }, [])
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-  }
+  }, [])
 
-  const handleDrop = async (e: React.DragEvent, newStatus: 'Not Started' | 'In Progress' | 'Completed' | 'Blocked') => {
+  const handleDrop = useCallback(async (e: React.DragEvent, newStatus: 'Not Started' | 'In Progress' | 'Completed' | 'Blocked') => {
     e.preventDefault()
     if (draggedTask) {
       // Update UI immediately for better UX
@@ -421,11 +672,11 @@ export default function Dashboard() {
       await updateTaskInDb(draggedTask.id, { status: newStatus })
       setDraggedTask(null)
     }
-  }
+  }, [draggedTask, updateTaskInDb])
 
-  const handleDragEnd = () => {
+  const handleDragEnd = useCallback(() => {
     setDraggedTask(null)
-  }
+  }, [])
 
   // DatePicker component
   const DatePicker = ({ value, onChange, placeholder = "Pick a date", name }: any) => {
@@ -475,31 +726,23 @@ export default function Dashboard() {
   const TabButton = ({ id, label, icon: Icon, active, onClick }: any) => (
     <button
       onClick={() => onClick(id)}
-      className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
+      className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 focus:ring-2 focus:ring-gray-500 focus:outline-none ${
         active 
           ? 'text-gray-900 border-gray-900' 
           : 'text-gray-500 hover:text-gray-700 border-transparent'
       }`}
+      role="tab"
+      aria-selected={active}
+      aria-controls={`${id}-panel`}
+      id={`${id}-tab`}
+      tabIndex={active ? 0 : -1}
     >
-      <Icon size={16} />
+      <Icon size={16} aria-hidden="true" />
       {label}
     </button>
   )
 
-  const ProgressBar = ({ value, max, className = '' }: any) => {
-    const safeValue = value || 0
-    const safeMax = max || 1
-    const percentage = Math.min(100, (safeValue / safeMax) * 100)
-    
-    return (
-      <div className={`w-full bg-gray-200 rounded-full h-2 ${className}`}>
-        <div 
-          className="bg-blue-500 h-2 rounded-full transition-all duration-300" 
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
-    )
-  }
+  // Removed unused ProgressBar component
 
   const StatusBadge = ({ status, className = '' }: any) => {
     const styles = {
@@ -525,17 +768,33 @@ export default function Dashboard() {
   }
 
   const EditTaskModal = () => {
-    if (!editingTask) return null
-
+    // Always call hooks at the top level
     const [editFormData, setEditFormData] = useState({
-      title: editingTask.title || '',
-      category: editingTask.category || 'Development',
-      status: editingTask.status || 'Not Started',
-      priority: editingTask.priority || 'Medium',
-      estimatedHours: editingTask.estimatedHours || 0,
-      actualHours: editingTask.actualHours || 0,
-      notes: editingTask.notes || ''
+      title: editingTask?.title || '',
+      category: editingTask?.category || 'Development',
+      status: editingTask?.status || 'Not Started',
+      priority: editingTask?.priority || 'Medium',
+      estimatedHours: editingTask?.estimatedHours || 0,
+      actualHours: editingTask?.actualHours || 0,
+      notes: editingTask?.notes || ''
     })
+
+    // Update form data when editingTask changes
+    React.useEffect(() => {
+      if (editingTask) {
+        setEditFormData({
+          title: editingTask.title || '',
+          category: editingTask.category || 'Development',
+          status: editingTask.status || 'Not Started',
+          priority: editingTask.priority || 'Medium',
+          estimatedHours: editingTask.estimatedHours || 0,
+          actualHours: editingTask.actualHours || 0,
+          notes: editingTask.notes || ''
+        })
+      }
+    }, [editingTask])
+
+    if (!editingTask) return null
 
     const handleUpdateTask = async () => {
       if (!editingTask.id) return
@@ -717,6 +976,8 @@ export default function Dashboard() {
   const createNewMilestone = async (milestoneInfo: any) => {
     if (!user || !currentProject) return
 
+    setIsCreatingMilestone(true)
+    setError(null)
     try {
       const milestone = await db.createMilestone({
         project_id: currentProject.id,
@@ -740,19 +1001,34 @@ export default function Dashboard() {
         }
         setMilestones(prev => [...prev, newMilestone])
       }
-    } catch (error) {
-      console.error('Error creating milestone:', error)
+          } catch (error) {
+        console.error('Error creating milestone:', error)
+        setError('Failed to create milestone. Please try again.')
+      } finally {
+        setIsCreatingMilestone(false)
+      }
     }
-  }
 
   const EditMilestoneModal = () => {
-    if (!editingMilestone) return null
-
+    // Always call hooks at the top level
     const [editFormData, setEditFormData] = useState({
-      title: editingMilestone.title || '',
-      description: editingMilestone.description || '',
-      targetDate: editingMilestone.targetDate || ''
+      title: editingMilestone?.title || '',
+      description: editingMilestone?.description || '',
+      targetDate: editingMilestone?.targetDate || ''
     })
+
+    // Update form data when editingMilestone changes
+    React.useEffect(() => {
+      if (editingMilestone) {
+        setEditFormData({
+          title: editingMilestone.title || '',
+          description: editingMilestone.description || '',
+          targetDate: editingMilestone.targetDate || ''
+        })
+      }
+    }, [editingMilestone])
+
+    if (!editingMilestone) return null
 
     // Calculate dynamic status and progress based on related tasks
     const relatedTasks = tasks.filter(task => {
@@ -849,7 +1125,7 @@ export default function Dashboard() {
                 <label className="block text-sm font-medium text-gray-900 mb-2">Target Date</label>
                 <DatePicker
                   value={editFormData.targetDate ? new Date(editFormData.targetDate) : undefined}
-                  onChange={(date) => setEditFormData(prev => ({ ...prev, targetDate: date ? date.toISOString().split('T')[0] : '' }))}
+                  onChange={(date: Date | undefined) => setEditFormData(prev => ({ ...prev, targetDate: date ? date.toISOString().split('T')[0] : '' }))}
                   placeholder="Select target date"
                 />
               </div>
@@ -1465,6 +1741,9 @@ export default function Dashboard() {
 
   return (
           <div className="min-h-screen bg-white">
+      <ErrorBanner error={error} onDismiss={() => setError(null)} />
+      <LoadingOverlay isLoading={isLoading} />
+
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-6 py-4">
@@ -1551,13 +1830,16 @@ export default function Dashboard() {
                   <Download size={14} />
                   Export
                 </button>
-                <button 
+                <LoadingButton
                   onClick={() => setShowTaskModal(true)}
-                  className="bg-gray-900 hover:bg-gray-800 text-white px-3 py-1.5 rounded text-sm font-medium flex items-center gap-1.5 transition-colors"
+                  loading={isCreatingTask}
+                  icon={Plus}
+                  iconSize={14}
+                  size="sm"
+                  variant="primary"
                 >
-                  <Plus size={14} />
                   New task
-                </button>
+                </LoadingButton>
                 <button 
                   onClick={handleResetData}
                   className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-1.5 rounded text-sm font-medium transition-colors"
@@ -1577,9 +1859,9 @@ export default function Dashboard() {
       </header>
 
       {/* Navigation Tabs */}
-      <div className="bg-white border-b border-gray-200">
+      <nav className="bg-white border-b border-gray-200" role="navigation" aria-label="Dashboard navigation">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="flex gap-0 -mb-px">
+          <div className="flex gap-0 -mb-px" role="tablist">
             <TabButton 
               id="dashboard" 
               label="Dashboard" 
@@ -1610,10 +1892,11 @@ export default function Dashboard() {
             />
           </div>
         </div>
-      </div>
+      </nav>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-6">
+      <main className="max-w-7xl mx-auto px-6 py-6" role="main" aria-labelledby="page-title">
+        <div id="dashboard-panel" role="tabpanel" aria-labelledby="dashboard-tab" hidden={activeTab !== 'dashboard'}>
         {activeTab === 'dashboard' && (
           <>
             {/* Show welcome message if no project */}
@@ -1627,13 +1910,17 @@ export default function Dashboard() {
                   <p className="text-gray-600 mb-6">
                     Get started by creating your first project. Track your progress, manage tasks, and achieve your goals.
                   </p>
-                  <button
+                  <LoadingButton
                     onClick={handleCreateProject}
-                    className="bg-gray-900 hover:bg-gray-800 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2 mx-auto"
+                    loading={isCreatingProject}
+                    icon={Plus}
+                    iconSize={18}
+                    size="lg"
+                    variant="primary"
+                    className="mx-auto"
                   >
-                    <Plus size={18} />
                     Create Your First Project
-                  </button>
+                  </LoadingButton>
                 </div>
                 
                 <div className="border-t pt-6">
@@ -1718,7 +2005,7 @@ export default function Dashboard() {
                   <p className="text-sm text-gray-600">
                     {milestones.length > 0 
                       ? milestones[0].title
-                      : 'No active milestone - add one to get started!'
+                      : "No active milestone - add one to get started!"
                     }
                   </p>
                 </div>
@@ -1874,13 +2161,17 @@ export default function Dashboard() {
                     <div className="text-center py-8">
                       <CalendarIcon size={32} className="text-gray-400 mx-auto mb-3" />
                       <p className="text-gray-500 mb-4">No milestones yet</p>
-                      <button
+                      <LoadingButton
                         onClick={handleAddMilestone}
-                        className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 mx-auto"
+                        loading={isCreatingMilestone}
+                        icon={Plus}
+                        iconSize={16}
+                        size="md"
+                        variant="primary"
+                        className="mx-auto"
                       >
-                        <Plus size={16} />
                         Add Milestone
-                      </button>
+                      </LoadingButton>
                     </div>
                   )}
                 </div>
@@ -1929,13 +2220,17 @@ export default function Dashboard() {
                 <div className="mt-6 pt-4 border-t border-gray-100">
                   <h3 className="font-medium text-gray-900 mb-3">Quick Actions</h3>
                   <div className="space-y-2">
-                    <button 
+                    <LoadingButton
                       onClick={handleAddTask}
-                      className="w-full text-left px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100 rounded-lg flex items-center gap-2 text-gray-700"
+                      loading={isCreatingTask}
+                      icon={Plus}
+                      iconSize={14}
+                      size="sm"
+                      variant="ghost"
+                      className="w-full justify-start"
                     >
-                      <Plus size={14} />
                       Add Task
-                    </button>
+                    </LoadingButton>
                     <button className="w-full text-left px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100 rounded-lg flex items-center gap-2 text-gray-700">
                       <Kanban size={14} />
                       View Kanban
@@ -1952,266 +2247,140 @@ export default function Dashboard() {
             )}
           </>
         )}
+        </div>
 
+        <div id="kanban-panel" role="tabpanel" aria-labelledby="kanban-tab" hidden={activeTab !== 'kanban'}>
         {activeTab === 'kanban' && (
           <div className="bg-white rounded-lg shadow-sm border p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold">Kanban Board</h2>
-              <button 
-                onClick={() => setShowTaskModal(true)}
-                className="bg-gray-900 hover:bg-gray-800 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
-              >
-                <Plus size={16} />
-                Add Task
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setShowSelection(!showSelection)
+                    setSelectedTasks([])
+                  }}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ${
+                    showSelection 
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  }`}
+                >
+                  {showSelection ? 'Exit Selection' : 'Select Tasks'}
+                </button>
+                <button 
+                  onClick={() => setShowTaskModal(true)}
+                  className="bg-gray-900 hover:bg-gray-800 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
+                >
+                  <Plus size={16} />
+                  Add Task
+                </button>
+              </div>
+            </div>
+            
+            {/* Search and Filter */}
+            <div className="mb-6">
+              <SearchAndFilter
+                searchTerm={searchTerm}
+                onSearchChange={setSearchTerm}
+                statusFilter={statusFilter}
+                onStatusFilterChange={setStatusFilter}
+                priorityFilter={priorityFilter}
+                onPriorityFilterChange={setPriorityFilter}
+                categoryFilter={categoryFilter}
+                onCategoryFilterChange={setCategoryFilter}
+                availableCategories={availableCategories}
+                showFilters={showFilters}
+                onToggleFilters={() => setShowFilters(!showFilters)}
+                onClearFilters={handleClearFilters}
+                placeholder="Search tasks..."
+              />
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              {/* To Do Column */}
-              <div 
-                className="bg-gray-50 rounded-lg p-4 border min-h-[400px]"
+              <KanbanColumn
+                title="To Do"
+                status="Not Started"
+                tasks={filteredTasks}
+                count={filteredTasks.filter(task => task.status === 'Not Started').length}
+                draggedTask={draggedTask}
+                onEditTask={handleEditTask}
+                onDeleteTask={handleDeleteTask}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
                 onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, 'Not Started')}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-medium flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-gray-400"></div>
-                    To Do
-                  </h3>
-                  <span className="bg-gray-200 text-gray-700 text-xs px-2 py-1 rounded-full font-medium">
-                    {tasks.filter(task => task.status === 'Not Started').length}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {tasks.filter(task => task.status === 'Not Started').map((task) => (
-                    <div 
-                      key={task.id} 
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, task)}
-                      onDragEnd={handleDragEnd}
-                      className={`bg-white p-4 rounded-lg shadow-sm border hover:shadow-md transition-all cursor-move ${
-                        draggedTask?.id === task.id ? 'opacity-50 rotate-2' : ''
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Code size={14} className="text-gray-500" />
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button 
-                            onClick={() => handleEditTask(task)}
-                            className="p-1 hover:bg-gray-100 rounded"
-                          >
-                            <Edit size={12} className="text-gray-400" />
-                          </button>
-                          <button className="p-1 hover:bg-gray-100 rounded">
-                            <Trash2 size={12} className="text-gray-400" />
-                          </button>
-                        </div>
-                      </div>
-                      <h4 className="font-medium text-sm mb-3 text-gray-900 leading-tight">{task.title}</h4>
-                      <div className="flex items-center justify-between mb-3">
-                        <StatusBadge status={task.priority.toLowerCase()} />
-                        <span className="text-xs text-gray-500">0h / {task.estimatedHours}h</span>
-                      </div>
-                      <div className="flex gap-1 flex-wrap">
-                        <span className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded font-medium border border-gray-300">
-                          {task.category}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                onDrop={handleDrop}
+                bgColor="bg-gray-50"
+                borderColor="border"
+                dotColor="bg-gray-400"
+                badgeColor="bg-gray-200 text-gray-700"
+                selectedTasks={selectedTasks}
+                onToggleSelect={handleToggleSelect}
+                showSelection={showSelection}
+              />
 
-              {/* In Progress Column */}
-              <div 
-                className="bg-blue-50 rounded-lg p-4 border border-blue-200 min-h-[400px]"
+              <KanbanColumn
+                title="In Progress"
+                status="In Progress"
+                tasks={filteredTasks}
+                count={filteredTasks.filter(task => task.status === 'In Progress').length}
+                draggedTask={draggedTask}
+                onEditTask={handleEditTask}
+                onDeleteTask={handleDeleteTask}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
                 onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, 'In Progress')}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-medium flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                    In Progress
-                  </h3>
-                  <span className="bg-blue-200 text-blue-700 text-xs px-2 py-1 rounded-full font-medium">
-                    {tasks.filter(task => task.status === 'In Progress').length}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {tasks.filter(task => task.status === 'In Progress').length === 0 ? (
-                    <div className="text-center py-12">
-                      <p className="text-sm text-gray-500">No tasks in progress</p>
-                    </div>
-                                        ) : (
-                    tasks.filter(task => task.status === 'In Progress').map((task) => (
-                      <div 
-                        key={task.id} 
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, task)}
-                        onDragEnd={handleDragEnd}
-                        className={`bg-white p-4 rounded-lg shadow-sm border hover:shadow-md transition-all cursor-move ${
-                          draggedTask?.id === task.id ? 'opacity-50 rotate-2' : ''
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <Code size={14} className="text-gray-500" />
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button 
-                              onClick={() => handleEditTask(task)}
-                              className="p-1 hover:bg-gray-100 rounded"
-                            >
-                              <Edit size={12} className="text-gray-400" />
-                            </button>
-                            <button className="p-1 hover:bg-gray-100 rounded">
-                              <Trash2 size={12} className="text-gray-400" />
-                            </button>
-                          </div>
-                        </div>
-                        <h4 className="font-medium text-sm mb-3 text-gray-900 leading-tight">{task.title}</h4>
-                        <div className="flex items-center justify-between mb-3">
-                          <StatusBadge status={task.priority.toLowerCase()} />
-                          <span className="text-xs text-gray-500">0h / {task.estimatedHours}h</span>
-                        </div>
-                        <div className="flex gap-1 flex-wrap">
-                          <span className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded font-medium border border-gray-300">
-                            {task.category}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+                onDrop={handleDrop}
+                bgColor="bg-blue-50"
+                borderColor="border border-blue-200"
+                dotColor="bg-blue-500"
+                badgeColor="bg-blue-200 text-blue-700"
+                selectedTasks={selectedTasks}
+                onToggleSelect={handleToggleSelect}
+                showSelection={showSelection}
+              />
 
-              {/* Done Column */}
-              <div 
-                className="bg-green-50 rounded-lg p-4 border border-green-200 min-h-[400px]"
+              <KanbanColumn
+                title="Done"
+                status="Completed"
+                tasks={filteredTasks}
+                count={filteredTasks.filter(task => task.status === 'Completed').length}
+                draggedTask={draggedTask}
+                onEditTask={handleEditTask}
+                onDeleteTask={handleDeleteTask}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
                 onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, 'Completed')}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-medium flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                    Done
-                  </h3>
-                  <span className="bg-green-200 text-green-700 text-xs px-2 py-1 rounded-full font-medium">
-                    {tasks.filter(task => task.status === 'Completed').length}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {tasks.filter(task => task.status === 'Completed').length === 0 ? (
-                    <div className="text-center py-12">
-                      <p className="text-sm text-gray-500">No tasks completed</p>
-                    </div>
-                  ) : (
-                    tasks.filter(task => task.status === 'Completed').map((task) => (
-                      <div 
-                        key={task.id} 
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, task)}
-                        onDragEnd={handleDragEnd}
-                        className={`bg-white p-4 rounded-lg shadow-sm border hover:shadow-md transition-all cursor-move ${
-                          draggedTask?.id === task.id ? 'opacity-50 rotate-2' : ''
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <Code size={14} className="text-gray-500" />
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button 
-                              onClick={() => handleEditTask(task)}
-                              className="p-1 hover:bg-gray-100 rounded"
-                            >
-                              <Edit size={12} className="text-gray-400" />
-                            </button>
-                            <button className="p-1 hover:bg-gray-100 rounded">
-                              <Trash2 size={12} className="text-gray-400" />
-                            </button>
-                          </div>
-                        </div>
-                        <h4 className="font-medium text-sm mb-3 text-gray-900 leading-tight">{task.title}</h4>
-                        <div className="flex items-center justify-between mb-3">
-                          <StatusBadge status={task.priority.toLowerCase()} />
-                          <span className="text-xs text-gray-500">0h / {task.estimatedHours}h</span>
-                        </div>
-                        <div className="flex gap-1 flex-wrap">
-                          <span className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded font-medium border border-gray-300">
-                            {task.category}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+                onDrop={handleDrop}
+                bgColor="bg-green-50"
+                borderColor="border border-green-200"
+                dotColor="bg-green-500"
+                badgeColor="bg-green-200 text-green-700"
+                selectedTasks={selectedTasks}
+                onToggleSelect={handleToggleSelect}
+                showSelection={showSelection}
+              />
 
-              {/* Blocked Column */}
-              <div 
-                className="bg-red-50 rounded-lg p-4 border border-red-200 min-h-[400px]"
+              <KanbanColumn
+                title="Blocked"
+                status="Blocked"
+                tasks={filteredTasks}
+                count={filteredTasks.filter(task => task.status === 'Blocked').length}
+                draggedTask={draggedTask}
+                onEditTask={handleEditTask}
+                onDeleteTask={handleDeleteTask}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
                 onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, 'Blocked')}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-medium flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                    Blocked
-                  </h3>
-                  <span className="bg-red-200 text-red-700 text-xs px-2 py-1 rounded-full font-medium">
-                    {tasks.filter(task => task.status === 'Blocked').length}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {tasks.filter(task => task.status === 'Blocked').length === 0 ? (
-                    <div className="text-center py-12">
-                      <p className="text-sm text-gray-500">No blocked tasks</p>
-                    </div>
-                  ) : (
-                    tasks.filter(task => task.status === 'Blocked').map((task) => (
-                      <div 
-                        key={task.id} 
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, task)}
-                        onDragEnd={handleDragEnd}
-                        className={`bg-white p-4 rounded-lg shadow-sm border hover:shadow-md transition-all cursor-move ${
-                          draggedTask?.id === task.id ? 'opacity-50 rotate-2' : ''
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <Code size={14} className="text-gray-500" />
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button 
-                              onClick={() => handleEditTask(task)}
-                              className="p-1 hover:bg-gray-100 rounded"
-                            >
-                              <Edit size={12} className="text-gray-400" />
-                            </button>
-                            <button className="p-1 hover:bg-gray-100 rounded">
-                              <Trash2 size={12} className="text-gray-400" />
-                            </button>
-                          </div>
-                        </div>
-                        <h4 className="font-medium text-sm mb-3 text-gray-900 leading-tight">{task.title}</h4>
-                        <div className="flex items-center justify-between mb-3">
-                          <StatusBadge status={task.priority.toLowerCase()} />
-                          <span className="text-xs text-gray-500">0h / {task.estimatedHours}h</span>
-                        </div>
-                        <div className="flex gap-1 flex-wrap">
-                          <span className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded font-medium border border-gray-300">
-                            {task.category}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+                onDrop={handleDrop}
+                bgColor="bg-red-50"
+                borderColor="border border-red-200"
+                dotColor="bg-red-500"
+                badgeColor="bg-red-200 text-red-700"
+                selectedTasks={selectedTasks}
+                onToggleSelect={handleToggleSelect}
+                showSelection={showSelection}
+              />
             </div>
 
             <div className="mt-6 text-sm text-gray-500">
@@ -2219,7 +2388,9 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+        </div>
 
+        <div id="analytics-panel" role="tabpanel" aria-labelledby="analytics-tab" hidden={activeTab !== 'analytics'}>
         {activeTab === 'analytics' && (
           <div className="space-y-6">
             {/* Analytics Header */}
@@ -2229,10 +2400,81 @@ export default function Dashboard() {
                   <h2 className="text-xl font-semibold">Analytics & Progress</h2>
                   <p className="text-sm text-gray-500 mt-1">Track your project progress and performance metrics</p>
                 </div>
-                <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
-                  <Download size={16} />
-                  Export Charts
-                </button>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <select 
+                      onChange={(e) => {
+                        const format = e.target.value as ExportFormat
+                        if (format) {
+                          handleExportProject(format)
+                          e.target.value = '' // Reset selection
+                        }
+                      }}
+                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium appearance-none pr-8 cursor-pointer focus:ring-2 focus:ring-gray-500 focus:outline-none"
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Export Project</option>
+                      <option value="json">Export as JSON</option>
+                      <option value="csv">Export as CSV</option>
+                    </select>
+                    <Download size={16} className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  </div>
+                  <div className="relative">
+                    <select 
+                      onChange={(e) => {
+                        const format = e.target.value as ExportFormat
+                        if (format) {
+                          handleExportTasks(format)
+                          e.target.value = '' // Reset selection
+                        }
+                      }}
+                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium appearance-none pr-8 cursor-pointer focus:ring-2 focus:ring-gray-500 focus:outline-none"
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Export Tasks</option>
+                      <option value="json">Tasks as JSON</option>
+                      <option value="csv">Tasks as CSV</option>
+                    </select>
+                    <Download size={16} className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  </div>
+                  <div className="relative">
+                    <select 
+                      onChange={(e) => {
+                        const format = e.target.value as ExportFormat
+                        if (format) {
+                          handleExportMilestones(format)
+                          e.target.value = '' // Reset selection
+                        }
+                      }}
+                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium appearance-none pr-8 cursor-pointer focus:ring-2 focus:ring-gray-500 focus:outline-none"
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Export Milestones</option>
+                      <option value="json">Milestones as JSON</option>
+                      <option value="csv">Milestones as CSV</option>
+                    </select>
+                    <Download size={16} className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+              
+              {/* Search and Filter */}
+              <div className="mb-6">
+                <SearchAndFilter
+                  searchTerm={searchTerm}
+                  onSearchChange={setSearchTerm}
+                  statusFilter={statusFilter}
+                  onStatusFilterChange={setStatusFilter}
+                  priorityFilter={priorityFilter}
+                  onPriorityFilterChange={setPriorityFilter}
+                  categoryFilter={categoryFilter}
+                  onCategoryFilterChange={setCategoryFilter}
+                  availableCategories={availableCategories}
+                  showFilters={showFilters}
+                  onToggleFilters={() => setShowFilters(!showFilters)}
+                  onClearFilters={handleClearFilters}
+                  placeholder="Search tasks for analytics..."
+                />
               </div>
 
               {/* Key Metrics */}
@@ -2266,7 +2508,7 @@ export default function Dashboard() {
                     </div>
                     <div>
                       <p className="text-sm text-gray-600 font-medium">Completion Rate</p>
-                      <p className="text-2xl font-bold text-gray-900">{safePercentage(completedTasks, tasks.length)}%</p>
+                      <p className="text-2xl font-bold text-gray-900">{safePercentage(filteredTasks.filter(task => task.status === 'Completed').length, filteredTasks.length)}%</p>
                     </div>
                   </div>
                 </div>
@@ -2277,7 +2519,7 @@ export default function Dashboard() {
                     </div>
                     <div>
                       <p className="text-sm text-red-600 font-medium">Blocked Tasks</p>
-                      <p className="text-2xl font-bold text-red-900">{tasks.filter(task => task.status === 'Blocked').length}</p>
+                      <p className="text-2xl font-bold text-red-900">{filteredTasks.filter(task => task.status === 'Blocked').length}</p>
                     </div>
                   </div>
                 </div>
@@ -2298,10 +2540,10 @@ export default function Dashboard() {
                         <div className="w-24 bg-gray-200 rounded-full h-2">
                           <div 
                             className="bg-gray-400 h-2 rounded-full" 
-                            style={{ width: `${(tasks.filter(t => t.status === 'Not Started').length / tasks.length) * 100}%` }}
+                            style={{ width: `${filteredTasks.length > 0 ? (filteredTasks.filter(t => t.status === 'Not Started').length / filteredTasks.length) * 100 : 0}%` }}
                           ></div>
                         </div>
-                        <span className="text-sm font-medium text-gray-900 w-8">{tasks.filter(t => t.status === 'Not Started').length}</span>
+                        <span className="text-sm font-medium text-gray-900 w-8">{filteredTasks.filter(t => t.status === 'Not Started').length}</span>
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
@@ -2313,10 +2555,10 @@ export default function Dashboard() {
                         <div className="w-24 bg-gray-200 rounded-full h-2">
                           <div 
                             className="bg-blue-500 h-2 rounded-full" 
-                            style={{ width: `${(tasks.filter(t => t.status === 'In Progress').length / tasks.length) * 100}%` }}
+                            style={{ width: `${filteredTasks.length > 0 ? (filteredTasks.filter(t => t.status === 'In Progress').length / filteredTasks.length) * 100 : 0}%` }}
                           ></div>
                         </div>
-                        <span className="text-sm font-medium text-gray-900 w-8">{tasks.filter(t => t.status === 'In Progress').length}</span>
+                        <span className="text-sm font-medium text-gray-900 w-8">{filteredTasks.filter(t => t.status === 'In Progress').length}</span>
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
@@ -2328,10 +2570,10 @@ export default function Dashboard() {
                         <div className="w-24 bg-gray-200 rounded-full h-2">
                           <div 
                             className="bg-green-500 h-2 rounded-full" 
-                            style={{ width: `${(tasks.filter(t => t.status === 'Completed').length / tasks.length) * 100}%` }}
+                            style={{ width: `${filteredTasks.length > 0 ? (filteredTasks.filter(t => t.status === 'Completed').length / filteredTasks.length) * 100 : 0}%` }}
                           ></div>
                         </div>
-                        <span className="text-sm font-medium text-gray-900 w-8">{tasks.filter(t => t.status === 'Completed').length}</span>
+                        <span className="text-sm font-medium text-gray-900 w-8">{filteredTasks.filter(t => t.status === 'Completed').length}</span>
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
@@ -2343,10 +2585,10 @@ export default function Dashboard() {
                         <div className="w-24 bg-gray-200 rounded-full h-2">
                           <div 
                             className="bg-red-500 h-2 rounded-full" 
-                            style={{ width: `${(tasks.filter(t => t.status === 'Blocked').length / tasks.length) * 100}%` }}
+                            style={{ width: `${filteredTasks.length > 0 ? (filteredTasks.filter(t => t.status === 'Blocked').length / filteredTasks.length) * 100 : 0}%` }}
                           ></div>
                         </div>
-                        <span className="text-sm font-medium text-gray-900 w-8">{tasks.filter(t => t.status === 'Blocked').length}</span>
+                        <span className="text-sm font-medium text-gray-900 w-8">{filteredTasks.filter(t => t.status === 'Blocked').length}</span>
                       </div>
                     </div>
                   </div>
@@ -2365,10 +2607,10 @@ export default function Dashboard() {
                         <div className="w-24 bg-gray-200 rounded-full h-2">
                           <div 
                             className="bg-gray-800 h-2 rounded-full" 
-                            style={{ width: `${(tasks.filter(t => t.priority === 'High').length / tasks.length) * 100}%` }}
+                            style={{ width: `${filteredTasks.length > 0 ? (filteredTasks.filter(t => t.priority === 'High').length / filteredTasks.length) * 100 : 0}%` }}
                           ></div>
                         </div>
-                        <span className="text-sm font-medium text-gray-900 w-8">{tasks.filter(t => t.priority === 'High').length}</span>
+                        <span className="text-sm font-medium text-gray-900 w-8">{filteredTasks.filter(t => t.priority === 'High').length}</span>
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
@@ -2380,10 +2622,10 @@ export default function Dashboard() {
                         <div className="w-24 bg-gray-200 rounded-full h-2">
                           <div 
                             className="bg-gray-600 h-2 rounded-full" 
-                            style={{ width: `${(tasks.filter(t => t.priority === 'Medium').length / tasks.length) * 100}%` }}
+                            style={{ width: `${filteredTasks.length > 0 ? (filteredTasks.filter(t => t.priority === 'Medium').length / filteredTasks.length) * 100 : 0}%` }}
                           ></div>
                         </div>
-                        <span className="text-sm font-medium text-gray-900 w-8">{tasks.filter(t => t.priority === 'Medium').length}</span>
+                        <span className="text-sm font-medium text-gray-900 w-8">{filteredTasks.filter(t => t.priority === 'Medium').length}</span>
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
@@ -2395,10 +2637,10 @@ export default function Dashboard() {
                         <div className="w-24 bg-gray-200 rounded-full h-2">
                           <div 
                             className="bg-gray-400 h-2 rounded-full" 
-                            style={{ width: `${(tasks.filter(t => t.priority === 'Low').length / tasks.length) * 100}%` }}
+                            style={{ width: `${filteredTasks.length > 0 ? (filteredTasks.filter(t => t.priority === 'Low').length / filteredTasks.length) * 100 : 0}%` }}
                           ></div>
                         </div>
-                        <span className="text-sm font-medium text-gray-900 w-8">{tasks.filter(t => t.priority === 'Low').length}</span>
+                        <span className="text-sm font-medium text-gray-900 w-8">{filteredTasks.filter(t => t.priority === 'Low').length}</span>
                       </div>
                     </div>
                   </div>
@@ -2491,7 +2733,7 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tasks.map((task) => (
+                    {filteredTasks.map((task) => (
                       <tr key={task.id} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="py-3 px-2">
                           <div className="font-medium text-gray-900">{task.title}</div>
@@ -2513,7 +2755,9 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+        </div>
 
+        <div id="timeline-panel" role="tabpanel" aria-labelledby="timeline-tab" hidden={activeTab !== 'timeline'}>
         {activeTab === 'timeline' && (
           <div className="bg-white rounded-lg shadow-sm border p-6">
             <div className="flex justify-between items-center mb-6">
@@ -2631,6 +2875,7 @@ export default function Dashboard() {
             )}
           </div>
         )}
+        </div>
       </main>
 
       {/* Task Management Modal */}
@@ -2653,6 +2898,42 @@ export default function Dashboard() {
       
       {/* Reset Confirmation Modal */}
       {showResetConfirmation && <ResetConfirmationModal />}
+      
+      {/* Delete Task Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={showDeleteConfirmation}
+        onClose={handleCancelDeleteTask}
+        onConfirm={handleConfirmDeleteTask}
+        title="Delete Task"
+        message={`Are you sure you want to delete "${taskToDelete?.title}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+        isLoading={isDeletingTask}
+      />
+      
+      {/* Bulk Delete Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={showBulkDeleteConfirmation}
+        onClose={handleCancelBulkDelete}
+        onConfirm={handleConfirmBulkDelete}
+        title="Delete Multiple Tasks"
+        message={`Are you sure you want to delete ${selectedTasks.length} selected task${selectedTasks.length > 1 ? 's' : ''}? This action cannot be undone.`}
+        confirmText="Delete All"
+        cancelText="Cancel"
+        variant="danger"
+        isLoading={isBulkOperating}
+      />
+      
+      {/* Bulk Actions Bar */}
+      <BulkActionsBar
+        selectedCount={selectedTasks.length}
+        onDeselectAll={handleDeselectAll}
+        onBulkDelete={handleBulkDelete}
+        onBulkStatusChange={handleBulkStatusChange}
+        onBulkPriorityChange={handleBulkPriorityChange}
+        isLoading={isBulkOperating}
+      />
     </div>
   )
 } 
