@@ -46,6 +46,7 @@ import BulkActionsBar from '@/components/BulkActionsBar'
 import { exportTasks, exportMilestones, exportProject, type ExportFormat } from '@/lib/exportUtils'
 import { getCategoryIcon } from '@/lib/utils'
 import { BUILTIN_TEMPLATES, TEMPLATE_CATEGORIES, DIFFICULTY_COLORS, CATEGORY_ICONS } from '@/lib/templates'
+import { useTimeTracking } from '@/hooks/useTimeTracking'
 
 export default function Dashboard() {
   const { user, loading } = useAuth()
@@ -104,6 +105,9 @@ export default function Dashboard() {
   const [currentProject, setCurrentProject] = useState<any>(null)
   const daysUntilLaunch = projectData.targetLaunchDate ? calculateDaysUntilLaunch(projectData.targetLaunchDate) : 0
   
+  // Use time tracking for dynamic actual hours
+  const trackedTasks = useTimeTracking(tasks)
+  
   // Sidebar state management
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [projects, setProjects] = useState<any[]>([])
@@ -155,14 +159,31 @@ export default function Dashboard() {
         db.getMilestones(projectId, user.id)
       ])
       
-      // Transform tasks from database format to UI format
+      // Transform tasks from database format to UI format, including time tracking fields
       setTasks((projectTasks || []).map(task => ({
+        // Core fields
         id: task.id,
+        project_id: task.project_id,
+        user_id: task.user_id,
         title: task.title,
         description: task.description || '',
         category: task.category,
         priority: task.priority,
         status: task.status,
+        estimated_hours: task.estimated_hours,
+        actual_hours: task.actual_hours,
+        due_date: task.due_date,
+        sprint_week: task.sprint_week,
+        created_at: task.created_at,
+        updated_at: task.updated_at,
+        completed_at: task.completed_at || undefined,
+        
+        // Time tracking fields
+        in_progress_started_at: task.in_progress_started_at,
+        in_progress_total_seconds: task.in_progress_total_seconds || 0,
+        last_status_change_at: task.last_status_change_at,
+        
+        // Legacy fields for backward compatibility
         estimatedHours: task.estimated_hours,
         actualHours: task.actual_hours,
         dueDate: task.due_date,
@@ -340,7 +361,7 @@ export default function Dashboard() {
   
   // Memoized expensive calculations
   const filteredTasks = useMemo(() => {
-    return tasks.filter(task => {
+    return trackedTasks.filter(task => {
       const matchesSearch = searchTerm === '' || 
         task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         task.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -352,7 +373,7 @@ export default function Dashboard() {
       
       return matchesSearch && matchesStatus && matchesPriority && matchesCategory
     })
-  }, [tasks, searchTerm, statusFilter, priorityFilter, categoryFilter])
+  }, [trackedTasks, searchTerm, statusFilter, priorityFilter, categoryFilter])
   
   // Memoized categories for filter dropdown
   const availableCategories = useMemo(() => {
@@ -1198,11 +1219,17 @@ export default function Dashboard() {
       if (template.tasks && template.tasks.length > 0) {
         const createdTasks = []
         for (const task of template.tasks) {
+          // Calculate due date - always provide one, even if no offset
           let dueDate = null
           if (task.dueDateOffset) {
             const taskDueDate = new Date(baseDate)
             taskDueDate.setDate(taskDueDate.getDate() + task.dueDateOffset)
             dueDate = taskDueDate.toISOString()
+          } else {
+            // Default to 7 days from now if no offset provided
+            const defaultDate = new Date(baseDate)
+            defaultDate.setDate(defaultDate.getDate() + 7)
+            dueDate = defaultDate.toISOString()
           }
           
           const taskData: any = {
@@ -1215,11 +1242,8 @@ export default function Dashboard() {
             status: 'Not Started',
             estimated_hours: task.estimatedHours || 0,
             actual_hours: 0,
-            sprint_week: 1
-          }
-          
-          if (dueDate) {
-            taskData.due_date = dueDate
+            due_date: dueDate, // Always provide due_date
+            sprint_week: task.sprintWeek || 1
           }
           
           const createdTask = await db.createTask(taskData)
@@ -1248,11 +1272,17 @@ export default function Dashboard() {
       if (template.milestones && template.milestones.length > 0) {
         const createdMilestones = []
         for (const milestone of template.milestones) {
+          // Calculate target date - always provide one, even if no offset
           let targetDate = null
           if (milestone.dueDateOffset) {
             const milestoneDate = new Date(baseDate)
             milestoneDate.setDate(milestoneDate.getDate() + milestone.dueDateOffset)
             targetDate = milestoneDate.toISOString()
+          } else {
+            // Default to 30 days from now if no offset provided
+            const defaultDate = new Date(baseDate)
+            defaultDate.setDate(defaultDate.getDate() + 30)
+            targetDate = defaultDate.toISOString()
           }
           
           const milestoneData: any = {
@@ -1260,12 +1290,9 @@ export default function Dashboard() {
             user_id: user.id,
             title: milestone.title,
             description: milestone.description || '',
+            target_date: targetDate, // Always provide target_date
             status: 'Not Started',
             progress: 0
-          }
-          
-          if (targetDate) {
-            milestoneData.target_date = targetDate
           }
           
           const createdMilestone = await db.createMilestone(milestoneData)
@@ -2063,6 +2090,12 @@ export default function Dashboard() {
                     onChange={(e) => setEditFormData(prev => ({ ...prev, actualHours: Number(e.target.value) }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {editingTask?.in_progress_total_seconds !== undefined 
+                      ? 'Time is automatically tracked when task is "In Progress". You can manually adjust if needed.'
+                      : 'Manual entry for legacy tasks. New tasks will track time automatically.'
+                    }
+                  </p>
                 </div>
               </div>
 
@@ -4450,7 +4483,7 @@ export default function Dashboard() {
                         </td>
                         <td className="py-3 px-2 text-gray-600">{task.estimatedHours}h</td>
                         <td className="py-3 px-2 text-gray-600">{task.actualHours}h</td>
-                        <td className="py-3 px-2 text-gray-600">{new Date(task.dueDate).toLocaleDateString()}</td>
+                        <td className="py-3 px-2 text-gray-600">{new Date(task.due_date).toLocaleDateString()}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -4553,7 +4586,7 @@ export default function Dashboard() {
                         <h4 className="font-medium text-gray-900 mb-2">Related Tasks:</h4>
                         {tasks.filter(task => {
                           // For now, we'll show tasks that are due around the same time as the milestone
-                          const taskDate = new Date(task.dueDate)
+                          const taskDate = new Date(task.due_date)
                           const milestoneDate = new Date(milestone.targetDate)
                           const daysDiff = Math.abs((taskDate.getTime() - milestoneDate.getTime()) / (1000 * 3600 * 24))
                           return daysDiff <= 7 // Tasks within 7 days of milestone
@@ -4564,7 +4597,7 @@ export default function Dashboard() {
                           </div>
                         ))}
                         {tasks.filter(task => {
-                          const taskDate = new Date(task.dueDate)
+                          const taskDate = new Date(task.due_date)
                           const milestoneDate = new Date(milestone.targetDate)
                           const daysDiff = Math.abs((taskDate.getTime() - milestoneDate.getTime()) / (1000 * 3600 * 24))
                           return daysDiff <= 7

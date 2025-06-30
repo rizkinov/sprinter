@@ -36,6 +36,10 @@ export interface Task {
   created_at: string
   updated_at: string
   completed_at?: string
+  // Time tracking fields for dynamic actual hours
+  in_progress_started_at?: string
+  in_progress_total_seconds: number
+  last_status_change_at: string
   // Legacy fields for compatibility with existing code
   estimatedHours?: number
   actualHours?: number

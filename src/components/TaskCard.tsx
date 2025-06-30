@@ -1,21 +1,15 @@
 'use client'
 
 import React from 'react'
-import { Edit, Trash2 } from 'lucide-react'
+import { Edit, Trash2, Clock } from 'lucide-react'
 import { getCategoryIcon } from '../lib/utils'
+import { useTaskActualHours } from '../hooks/useTimeTracking'
+import { formatHours } from '../lib/timeTracking'
+
+import type { Task } from '../types'
 
 interface TaskCardProps {
-  task: {
-    id: string
-    title: string
-    description?: string
-    category: string
-    priority: string
-    status: string
-    estimatedHours: number
-    actualHours: number
-    dueDate?: string
-  }
+  task: Task
   draggedTask?: any
   onEditTask: (task: any) => void
   onDeleteTask: (task: any) => void
@@ -58,6 +52,9 @@ const TaskCard = React.memo(function TaskCard({
   onToggleSelect,
   showSelection = false
 }: TaskCardProps) {
+  // Use dynamic time tracking for actual hours
+  const actualHours = useTaskActualHours(task)
+  
   return (
     <div 
       key={task.id} 
@@ -112,6 +109,13 @@ const TaskCard = React.memo(function TaskCard({
           })()}
         </div>
         <div className="flex items-center gap-1">
+          {/* Show active time tracking indicator for in-progress tasks */}
+          {task.status === 'In Progress' && task.in_progress_started_at && (
+            <div className="flex items-center gap-1 text-blue-600 bg-blue-50 px-2 py-1 rounded text-xs">
+              <Clock size={10} />
+              <span>Active</span>
+            </div>
+          )}
           <button 
             onClick={(e) => {
               e.stopPropagation()
@@ -137,11 +141,11 @@ const TaskCard = React.memo(function TaskCard({
       <h4 className="font-medium text-sm mb-3 text-gray-900 leading-tight">{task.title}</h4>
       <div className="flex items-center justify-between mb-3">
         <StatusBadge status={task.priority.toLowerCase()} />
-        <span className="text-xs text-gray-500">{task.actualHours}h / {task.estimatedHours}h</span>
+        <span className="text-xs text-gray-500">{actualHours || 0}h / {task.estimatedHours || task.estimated_hours || 0}h</span>
       </div>
-      {task.dueDate && (
+      {task.due_date && (
         <div className="mb-3">
-          <span className="text-xs text-gray-500">Due: {new Date(task.dueDate).toLocaleDateString()}</span>
+          <span className="text-xs text-gray-500">Due: {new Date(task.due_date).toLocaleDateString()}</span>
         </div>
       )}
       <div className="flex gap-1 flex-wrap">

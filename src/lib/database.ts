@@ -1,4 +1,5 @@
 import { createSupabaseClient, Database } from './supabase'
+import { calculateStatusChangeUpdates, initializeTimeTracking } from './timeTracking'
 
 type Tables = Database['public']['Tables']
 type Project = Tables['projects']['Row']
@@ -158,11 +159,32 @@ export class DatabaseService {
   }
 
   async createTask(task: TaskInsert): Promise<Task | null> {
-    const { data, error } = await this.supabase
+    // First try creating without time tracking fields (for backward compatibility)
+    let { data, error } = await this.supabase
       .from('tasks')
       .insert(task)
       .select()
       .single()
+
+    // If successful, try to add time tracking data (if fields exist)
+    if (data && !error) {
+      try {
+        const timeTrackingData = initializeTimeTracking(task.status || 'Not Started')
+        
+        const { error: updateError } = await this.supabase
+          .from('tasks')
+          .update(timeTrackingData)
+          .eq('id', data.id)
+        
+        if (updateError) {
+          // Time tracking fields not available yet - task created without time tracking
+          // This is expected before running the database migration
+        }
+      } catch (timeTrackingError) {
+        // Time tracking initialization failed - continuing without it
+        // This is expected before running the database migration
+      }
+    }
 
     if (error) {
       console.error('Error creating task:', error)
@@ -173,16 +195,59 @@ export class DatabaseService {
   }
 
   async updateTask(taskId: string, updates: TaskUpdate): Promise<Task | null> {
-    const updateData = {
+    let updateData: TaskUpdate = {
       ...updates,
       updated_at: new Date().toISOString()
     }
 
-    // If status is being changed to 'Completed', set completed_at
-    if (updates.status === 'Completed') {
-      updateData.completed_at = new Date().toISOString()
-    } else if (updates.status) {
-      updateData.completed_at = null
+    // If status is being changed, handle time tracking
+    if (updates.status) {
+      // First, get the current task to check its current status
+      // We need to fetch the task to get the current values
+      const { data: currentTask, error: fetchError } = await this.supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', taskId)
+        .single()
+      
+      if (fetchError) {
+        console.error('Error fetching current task for time tracking:', fetchError)
+        // Continue with the update without time tracking if we can't fetch current task
+      }
+      
+      if (currentTask && currentTask.status !== updates.status) {
+        const timeTrackingUpdates = calculateStatusChangeUpdates(
+          currentTask.status,
+          updates.status,
+          {
+            inProgressStartedAt: currentTask.in_progress_started_at,
+            inProgressTotalSeconds: currentTask.in_progress_total_seconds || 0,
+            lastStatusChangeAt: currentTask.last_status_change_at,
+            status: currentTask.status
+          }
+        )
+        
+        // Create new updateData with time tracking fields
+        updateData = {
+          ...updateData,
+          ...(timeTrackingUpdates.inProgressStartedAt !== undefined && {
+            in_progress_started_at: timeTrackingUpdates.inProgressStartedAt
+          }),
+          ...(timeTrackingUpdates.inProgressTotalSeconds !== undefined && {
+            in_progress_total_seconds: timeTrackingUpdates.inProgressTotalSeconds
+          }),
+          ...(timeTrackingUpdates.lastStatusChangeAt !== undefined && {
+            last_status_change_at: timeTrackingUpdates.lastStatusChangeAt
+          })
+        }
+      }
+
+      // If status is being changed to 'Completed', set completed_at
+      if (updates.status === 'Completed') {
+        updateData.completed_at = new Date().toISOString()
+      } else {
+        updateData.completed_at = null
+      }
     }
 
     const { data, error } = await this.supabase

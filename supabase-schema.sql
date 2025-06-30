@@ -34,7 +34,11 @@ CREATE TABLE IF NOT EXISTS tasks (
   sprint_week INTEGER DEFAULT 1,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  completed_at TIMESTAMP WITH TIME ZONE
+  completed_at TIMESTAMP WITH TIME ZONE,
+  -- New time tracking fields for dynamic actual hours
+  in_progress_started_at TIMESTAMP WITH TIME ZONE,
+  in_progress_total_seconds INTEGER DEFAULT 0,
+  last_status_change_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Create milestones table

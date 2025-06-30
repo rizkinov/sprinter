@@ -60,6 +60,9 @@ export interface Database {
           created_at: string
           updated_at: string
           completed_at: string | null
+          in_progress_started_at: string | null
+          in_progress_total_seconds: number
+          last_status_change_at: string
         }
         Insert: {
           id?: string
@@ -77,6 +80,9 @@ export interface Database {
           created_at?: string
           updated_at?: string
           completed_at?: string | null
+          in_progress_started_at?: string | null
+          in_progress_total_seconds?: number
+          last_status_change_at?: string
         }
         Update: {
           id?: string
@@ -94,6 +100,9 @@ export interface Database {
           created_at?: string
           updated_at?: string
           completed_at?: string | null
+          in_progress_started_at?: string | null
+          in_progress_total_seconds?: number
+          last_status_change_at?: string
         }
       }
       milestones: {
