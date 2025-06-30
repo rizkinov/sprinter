@@ -7,6 +7,7 @@ import {
   TrendingUp, 
   Calendar as CalendarIcon,
   Download,
+  Upload,
   Plus,
   Target,
   AlertTriangle,
@@ -579,6 +580,14 @@ export default function Dashboard() {
 
   // Smart Focus Area system
   const [focusArea, setFocusArea] = useState<any>({ priority: "", focusType: "general", metrics: [], urgentCount: 0 })
+
+  // Template Import System (Phase 2B)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importedTemplate, setImportedTemplate] = useState<any>(null)
+  const [showTemplatePreview, setShowTemplatePreview] = useState(false)
+  const [importMode, setImportMode] = useState<'new-project' | 'replace-current'>('new-project')
+  const [isImporting, setIsImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
   const generateFocusArea = useCallback(() => {
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -703,6 +712,331 @@ export default function Dashboard() {
     const focus = generateFocusArea()
     setFocusArea(focus)
   }, [generateFocusArea])
+
+  // Template Import Functions (Phase 2B)
+  const validateTemplate = (template: any): { isValid: boolean; error?: string } => {
+    try {
+      // Check basic structure
+      if (!template || typeof template !== 'object') {
+        return { isValid: false, error: 'Invalid template file format' }
+      }
+
+      // Check version
+      if (!template.version || !['1.0', '2.0'].includes(template.version)) {
+        return { isValid: false, error: 'Unsupported template version. Expected 1.0 or 2.0' }
+      }
+
+      // Check required fields for v2.0
+      if (template.version === '2.0') {
+        if (!template.metadata || !template.project || !Array.isArray(template.tasks) || !Array.isArray(template.milestones)) {
+          return { isValid: false, error: 'Missing required template fields (metadata, project, tasks, milestones)' }
+        }
+
+        // Validate metadata
+        if (!template.metadata.name || !template.metadata.author) {
+          return { isValid: false, error: 'Template metadata must include name and author' }
+        }
+      }
+
+      // Check legacy v1.0 format
+      if (template.version === '1.0') {
+        if (!template.projectData || !Array.isArray(template.tasks) || !Array.isArray(template.milestones)) {
+          return { isValid: false, error: 'Invalid v1.0 template format' }
+        }
+      }
+
+      return { isValid: true }
+    } catch (error) {
+      return { isValid: false, error: 'Failed to parse template file' }
+    }
+  }
+
+  const convertRelativeDates = (template: any, baseDate: Date = new Date()): any => {
+    try {
+      const convertedTemplate = { ...template }
+
+      // Convert project dates
+      if (template.project) {
+        if (template.project.start_date_offset_days !== undefined) {
+          const startDate = new Date(baseDate)
+          startDate.setDate(startDate.getDate() + template.project.start_date_offset_days)
+          convertedTemplate.project.start_date = startDate.toISOString()
+        }
+
+        if (template.project.target_launch_date_offset_days !== undefined) {
+          const launchDate = new Date(baseDate)
+          launchDate.setDate(launchDate.getDate() + template.project.target_launch_date_offset_days)
+          convertedTemplate.project.target_launch_date = launchDate.toISOString()
+        }
+      }
+
+      // Convert task due dates
+      if (template.tasks) {
+        convertedTemplate.tasks = template.tasks.map((task: any) => {
+          if (task.due_date_offset_days !== undefined) {
+            const dueDate = new Date(baseDate)
+            dueDate.setDate(dueDate.getDate() + task.due_date_offset_days)
+            return { ...task, due_date: dueDate.toISOString() }
+          }
+          return task
+        })
+      }
+
+      // Convert milestone target dates
+      if (template.milestones) {
+        convertedTemplate.milestones = template.milestones.map((milestone: any) => {
+          if (milestone.target_date_offset_days !== undefined) {
+            const targetDate = new Date(baseDate)
+            targetDate.setDate(targetDate.getDate() + milestone.target_date_offset_days)
+            return { ...milestone, target_date: targetDate.toISOString() }
+          }
+          return milestone
+        })
+      }
+
+      return convertedTemplate
+    } catch (error) {
+      console.error('Error converting relative dates:', error)
+      return template
+    }
+  }
+
+  const handleFileUpload = async (file: File) => {
+    setImportError(null)
+    try {
+      const text = await file.text()
+      const template = JSON.parse(text)
+      
+      const validation = validateTemplate(template)
+      if (!validation.isValid) {
+        setImportError(validation.error || 'Invalid template')
+        return
+      }
+
+      // Convert relative dates to actual dates
+      const processedTemplate = convertRelativeDates(template)
+      setImportedTemplate(processedTemplate)
+      setShowTemplatePreview(true)
+    } catch (error) {
+      setImportError('Failed to read template file. Please ensure it\'s a valid JSON file.')
+    }
+  }
+
+  const handleImportTemplate = async () => {
+    if (!importedTemplate || !user) return
+
+    setIsImporting(true)
+    setImportError(null)
+
+    try {
+      if (importMode === 'new-project') {
+        // Create new project from template
+        const projectData = importedTemplate.project || importedTemplate.projectData
+        const project = await db.createProject({
+          user_id: user.id,
+          name: projectData.name || importedTemplate.metadata?.name || 'Imported Project',
+          description: projectData.description || importedTemplate.metadata?.description || '',
+          start_date: projectData.start_date || new Date().toISOString(),
+          target_launch_date: projectData.target_launch_date,
+          current_sprint: projectData.current_sprint || 1,
+          total_sprints: projectData.total_sprints || 16
+        })
+
+        if (project) {
+          // Set as active project
+          setCurrentProject(project)
+          setActiveProjectId(project.id)
+          setProjects(prev => [...prev, project])
+          setProjectData({
+            projectName: project.name,
+            startDate: project.start_date,
+            targetLaunchDate: project.target_launch_date,
+            description: project.description || '',
+            currentSprint: project.current_sprint,
+            totalSprints: project.total_sprints
+          })
+
+          // Import milestones
+          const importedMilestones = []
+          for (const milestoneData of importedTemplate.milestones || []) {
+            const milestone = await db.createMilestone({
+              project_id: project.id,
+              user_id: user.id,
+              title: milestoneData.title,
+              description: milestoneData.description || '',
+              target_date: milestoneData.target_date,
+              status: 'Not Started',
+              progress: 0
+            })
+
+            if (milestone) {
+              importedMilestones.push({
+                id: milestone.id,
+                title: milestone.title,
+                description: milestone.description || '',
+                targetDate: milestone.target_date,
+                status: milestone.status,
+                progress: milestone.progress,
+                createdAt: milestone.created_at,
+                tasks: []
+              })
+            }
+          }
+
+          // Import tasks
+          const importedTasks = []
+          for (const taskData of importedTemplate.tasks || []) {
+            const task = await db.createTask({
+              project_id: project.id,
+              user_id: user.id,
+              title: taskData.title,
+              description: taskData.description || '',
+              category: taskData.category || 'Development',
+              priority: taskData.priority || 'Medium',
+              status: 'Not Started',
+              estimated_hours: taskData.estimated_hours || 0,
+              actual_hours: 0,
+              due_date: taskData.due_date,
+              sprint_week: taskData.sprint_week || 1
+            })
+
+            if (task) {
+              importedTasks.push({
+                id: task.id,
+                title: task.title,
+                description: task.description || '',
+                category: task.category,
+                priority: task.priority,
+                status: task.status,
+                estimatedHours: task.estimated_hours,
+                actualHours: task.actual_hours,
+                dueDate: task.due_date,
+                createdAt: task.created_at,
+                sprintWeek: task.sprint_week
+              })
+            }
+          }
+
+          setMilestones(importedMilestones)
+          setTasks(importedTasks)
+        }
+
+      } else {
+        // Replace current project data
+        if (!currentProject) {
+          setImportError('No active project to replace')
+          return
+        }
+
+                 // Clear existing tasks (milestones will be replaced by creating new ones)
+         for (const task of tasks) {
+           await db.deleteTask(task.id, user.id)
+         }
+         // Note: Milestone deletion would require additional database method
+         // For now, new milestones will be added alongside existing ones
+
+        // Update project info
+        const projectData = importedTemplate.project || importedTemplate.projectData
+        if (projectData) {
+          await db.updateProject(currentProject.id, {
+            name: projectData.name || currentProject.name,
+            description: projectData.description,
+            target_launch_date: projectData.target_launch_date,
+            total_sprints: projectData.total_sprints || currentProject.total_sprints
+          })
+
+          setProjectData(prev => ({
+            ...prev,
+            projectName: projectData.name || prev.projectName,
+            description: projectData.description || prev.description,
+            targetLaunchDate: projectData.target_launch_date || prev.targetLaunchDate,
+            totalSprints: projectData.total_sprints || prev.totalSprints
+          }))
+        }
+
+        // Import new milestones and tasks (same logic as above)
+        const importedMilestones = []
+        for (const milestoneData of importedTemplate.milestones || []) {
+          const milestone = await db.createMilestone({
+            project_id: currentProject.id,
+            user_id: user.id,
+            title: milestoneData.title,
+            description: milestoneData.description || '',
+            target_date: milestoneData.target_date,
+            status: 'Not Started',
+            progress: 0
+          })
+
+          if (milestone) {
+            importedMilestones.push({
+              id: milestone.id,
+              title: milestone.title,
+              description: milestone.description || '',
+              targetDate: milestone.target_date,
+              status: milestone.status,
+              progress: milestone.progress,
+              createdAt: milestone.created_at,
+              tasks: []
+            })
+          }
+        }
+
+        const importedTasks = []
+        for (const taskData of importedTemplate.tasks || []) {
+          const task = await db.createTask({
+            project_id: currentProject.id,
+            user_id: user.id,
+            title: taskData.title,
+            description: taskData.description || '',
+            category: taskData.category || 'Development',
+            priority: taskData.priority || 'Medium',
+            status: 'Not Started',
+            estimated_hours: taskData.estimated_hours || 0,
+            actual_hours: 0,
+            due_date: taskData.due_date,
+            sprint_week: taskData.sprint_week || 1
+          })
+
+          if (task) {
+            importedTasks.push({
+              id: task.id,
+              title: task.title,
+              description: task.description || '',
+              category: task.category,
+              priority: task.priority,
+              status: task.status,
+              estimatedHours: task.estimated_hours,
+              actualHours: task.actual_hours,
+              dueDate: task.due_date,
+              createdAt: task.created_at,
+              sprintWeek: task.sprint_week
+            })
+          }
+        }
+
+        setMilestones(importedMilestones)
+        setTasks(importedTasks)
+      }
+
+      // Close modals and reset state
+      setShowImportModal(false)
+      setShowTemplatePreview(false)
+      setImportedTemplate(null)
+
+    } catch (error) {
+      console.error('Error importing template:', error)
+      setImportError('Failed to import template. Please try again.')
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  const handleCloseImport = () => {
+    setShowImportModal(false)
+    setShowTemplatePreview(false)
+    setImportedTemplate(null)
+    setImportError(null)
+  }
 
   const createNewProject = async (projectInfo: any) => {
     if (!user) return
@@ -2236,6 +2570,275 @@ export default function Dashboard() {
     </div>
   )
 
+  // Import Modal Components (Phase 2B)
+  const FileUploadModal = () => {
+    const [dragActive, setDragActive] = useState(false)
+
+    const handleDrag = (e: React.DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.type === "dragenter" || e.type === "dragover") {
+        setDragActive(true)
+      } else if (e.type === "dragleave") {
+        setDragActive(false)
+      }
+    }
+
+    const handleDrop = (e: React.DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setDragActive(false)
+      
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        handleFileUpload(e.dataTransfer.files[0])
+      }
+    }
+
+    const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files[0]) {
+        handleFileUpload(e.target.files[0])
+      }
+    }
+
+    return (
+      <div className="fixed inset-0 bg-gray-200/70 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg shadow-xl max-w-md w-full relative z-50">
+          <div className="flex items-center justify-between p-6 border-b">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Import Template</h2>
+              <p className="text-sm text-gray-500 mt-1">Upload a project template file</p>
+            </div>
+            <button
+              onClick={handleCloseImport}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+
+          <div className="p-6">
+            {importError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-600">{importError}</p>
+              </div>
+            )}
+
+            <div 
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                dragActive 
+                  ? 'border-blue-400 bg-blue-50' 
+                  : 'border-gray-300 hover:border-gray-400'
+              }`}
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+            >
+              <Upload size={48} className="mx-auto text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Drop your template file here
+              </h3>
+              <p className="text-gray-500 mb-4">
+                or click to browse for a JSON template file
+              </p>
+              
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleFileInput}
+                className="hidden"
+                id="template-upload"
+              />
+              <label
+                htmlFor="template-upload"
+                className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg cursor-pointer inline-flex items-center gap-2"
+              >
+                <Upload size={16} />
+                Choose File
+              </label>
+            </div>
+
+            <div className="mt-4 text-xs text-gray-500">
+              <p>Supported formats: JSON template files (v1.0 or v2.0)</p>
+              <p>File size limit: 10MB</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const TemplatePreviewModal = () => {
+    if (!importedTemplate) return null
+
+    const template = importedTemplate
+    const isV2 = template.version === '2.0'
+
+    return (
+      <div className="fixed inset-0 bg-gray-200/70 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative z-50">
+          <div className="flex items-center justify-between p-6 border-b">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Template Preview</h2>
+              <p className="text-sm text-gray-500 mt-1">Review template before importing</p>
+            </div>
+            <button
+              onClick={handleCloseImport}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+
+          <div className="p-6">
+            {/* Template Metadata */}
+            <div className="mb-6">
+              <h3 className="font-medium text-gray-900 mb-3">Template Information</h3>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-sm font-medium text-gray-600">Name:</span>
+                    <p className="text-sm text-gray-900">
+                      {isV2 ? template.metadata?.name : template.projectData?.name || 'Untitled'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-gray-600">Version:</span>
+                    <p className="text-sm text-gray-900">{template.version}</p>
+                  </div>
+                  {isV2 && (
+                    <>
+                      <div>
+                        <span className="text-sm font-medium text-gray-600">Author:</span>
+                        <p className="text-sm text-gray-900">{template.metadata?.author}</p>
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-gray-600">Difficulty:</span>
+                        <p className="text-sm text-gray-900">{template.metadata?.difficulty}</p>
+                      </div>
+                    </>
+                  )}
+                </div>
+                {isV2 && template.metadata?.description && (
+                  <div className="mt-3">
+                    <span className="text-sm font-medium text-gray-600">Description:</span>
+                    <p className="text-sm text-gray-900 mt-1">{template.metadata.description}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Content Summary */}
+            <div className="grid grid-cols-2 gap-6 mb-6">
+              <div>
+                <h3 className="font-medium text-gray-900 mb-3">
+                  Tasks ({template.tasks?.length || 0})
+                </h3>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {template.tasks?.slice(0, 5).map((task: any, index: number) => (
+                    <div key={index} className="bg-gray-50 rounded p-2">
+                      <p className="text-sm font-medium text-gray-900">{task.title}</p>
+                      <p className="text-xs text-gray-500">
+                        {task.category} • {task.priority} Priority
+                      </p>
+                    </div>
+                  ))}
+                  {(template.tasks?.length || 0) > 5 && (
+                    <p className="text-xs text-gray-500">
+                      ...and {(template.tasks?.length || 0) - 5} more tasks
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-medium text-gray-900 mb-3">
+                  Milestones ({template.milestones?.length || 0})
+                </h3>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {template.milestones?.slice(0, 5).map((milestone: any, index: number) => (
+                    <div key={index} className="bg-gray-50 rounded p-2">
+                      <p className="text-sm font-medium text-gray-900">{milestone.title}</p>
+                      {milestone.description && (
+                        <p className="text-xs text-gray-500">{milestone.description}</p>
+                      )}
+                    </div>
+                  ))}
+                  {(template.milestones?.length || 0) > 5 && (
+                    <p className="text-xs text-gray-500">
+                      ...and {(template.milestones?.length || 0) - 5} more milestones
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Import Options */}
+            <div className="border-t pt-6">
+              <h3 className="font-medium text-gray-900 mb-3">Import Options</h3>
+              <div className="space-y-3">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    value="new-project"
+                    checked={importMode === 'new-project'}
+                    onChange={(e) => setImportMode(e.target.value as 'new-project' | 'replace-current')}
+                    className="mr-3"
+                  />
+                  <div>
+                    <p className="font-medium text-gray-900">Create New Project</p>
+                    <p className="text-sm text-gray-500">
+                      Import as a brand new project (recommended)
+                    </p>
+                  </div>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    value="replace-current"
+                    checked={importMode === 'replace-current'}
+                    onChange={(e) => setImportMode(e.target.value as 'new-project' | 'replace-current')}
+                    className="mr-3"
+                    disabled={!currentProject}
+                  />
+                  <div>
+                    <p className={`font-medium ${!currentProject ? 'text-gray-400' : 'text-gray-900'}`}>
+                      Replace Current Project
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      {!currentProject 
+                        ? 'No active project to replace' 
+                        : 'Replace all tasks and milestones in current project'
+                      }
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-3 pt-6 border-t mt-6">
+              <button
+                onClick={handleCloseImport}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium"
+                disabled={isImporting}
+              >
+                Cancel
+              </button>
+              <LoadingButton
+                onClick={handleImportTemplate}
+                loading={isImporting}
+                className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg font-medium"
+              >
+                Import Template
+              </LoadingButton>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const ResetConfirmationModal = () => {
     if (!showResetConfirmation) return null
 
@@ -2856,6 +3459,14 @@ export default function Dashboard() {
                       <Download size={14} />
                       Export Data
                     </button>
+                    <button 
+                      onClick={() => setShowImportModal(true)}
+                      className="w-full text-left px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100 rounded-lg flex items-center gap-2 text-gray-700"
+                      title="Import project template"
+                    >
+                      <Upload size={14} />
+                      Import Template
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3033,6 +3644,15 @@ export default function Dashboard() {
                       <SelectItem value="template">Save as Template</SelectItem>
                     </SelectContent>
                   </Select>
+
+                  <button
+                    onClick={() => setShowImportModal(true)}
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 focus:ring-2 focus:ring-gray-500"
+                    title="Import project template"
+                  >
+                    <Upload size={16} className="text-gray-500" />
+                    Import Template
+                  </button>
 
                   <Select onValueChange={(value: ExportFormat) => {
                     if (value) {
@@ -3506,6 +4126,10 @@ export default function Dashboard() {
       
       {/* Reset Confirmation Modal */}
       {showResetConfirmation && <ResetConfirmationModal />}
+      
+      {/* Import Template Modals */}
+      {showImportModal && !showTemplatePreview && <FileUploadModal />}
+      {showTemplatePreview && <TemplatePreviewModal />}
       
       {/* Delete Task Confirmation Dialog */}
       <ConfirmationDialog
