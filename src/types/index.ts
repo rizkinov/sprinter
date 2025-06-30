@@ -59,7 +59,7 @@ export interface Milestone {
 }
 
 // Enums for type safety
-export type TaskCategory = 'Development' | 'Design' | 'Testing' | 'Research' | 'Planning' | 'Marketing' | 'Other'
+export type TaskCategory = 'Development' | 'Design' | 'Testing' | 'Research' | 'Planning' | 'Marketing' | 'Strategy' | 'Communication' | 'Administration' | 'Finance' | 'Legal' | 'Operations' | 'Misc'
 export type TaskPriority = 'Low' | 'Medium' | 'High'
 export type TaskStatus = 'Not Started' | 'In Progress' | 'Completed' | 'Blocked'
 export type MilestoneStatus = 'Not Started' | 'In Progress' | 'Completed'

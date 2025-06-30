@@ -37,6 +37,7 @@ import ConfirmationDialog from '@/components/ConfirmationDialog'
 import SearchAndFilter from '@/components/SearchAndFilter'
 import BulkActionsBar from '@/components/BulkActionsBar'
 import { exportTasks, exportMilestones, exportProject, type ExportFormat } from '@/lib/exportUtils'
+import { getCategoryIcon } from '@/lib/utils'
 
 export default function Dashboard() {
   const { user, loading } = useAuth()
@@ -846,7 +847,7 @@ export default function Dashboard() {
     }
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-gray-200/70 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative z-50">
           {/* Modal Header */}
           <div className="flex items-center justify-between p-6 border-b">
@@ -891,9 +892,16 @@ export default function Dashboard() {
                       <SelectItem value="Development">Development</SelectItem>
                       <SelectItem value="Design">Design</SelectItem>
                       <SelectItem value="Testing">Testing</SelectItem>
-                      <SelectItem value="Documentation">Documentation</SelectItem>
-                      <SelectItem value="Marketing">Marketing</SelectItem>
                       <SelectItem value="Research">Research</SelectItem>
+                      <SelectItem value="Planning">Planning</SelectItem>
+                      <SelectItem value="Marketing">Marketing</SelectItem>
+                      <SelectItem value="Strategy">Strategy</SelectItem>
+                      <SelectItem value="Communication">Communication</SelectItem>
+                      <SelectItem value="Administration">Administration</SelectItem>
+                      <SelectItem value="Finance">Finance</SelectItem>
+                      <SelectItem value="Legal">Legal</SelectItem>
+                      <SelectItem value="Operations">Operations</SelectItem>
+                      <SelectItem value="Misc">Misc</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1103,7 +1111,7 @@ export default function Dashboard() {
     }
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-gray-200/70 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
           {/* Modal Header */}
           <div className="flex items-center justify-between p-6 border-b">
@@ -1233,7 +1241,7 @@ export default function Dashboard() {
     }
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+      <div className="fixed inset-0 bg-gray-200/70 flex items-center justify-center z-[60] p-4">
         <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between p-6 border-b">
             <div>
@@ -1332,7 +1340,7 @@ export default function Dashboard() {
     }
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-gray-200/70 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between p-6 border-b">
             <div>
@@ -1493,7 +1501,7 @@ export default function Dashboard() {
     }
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-gray-200/70 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
           {/* Modal Header */}
           <div className="flex items-center justify-between p-6 border-b">
@@ -1551,9 +1559,16 @@ export default function Dashboard() {
                       <SelectItem value="Development">Development</SelectItem>
                       <SelectItem value="Design">Design</SelectItem>
                       <SelectItem value="Testing">Testing</SelectItem>
-                      <SelectItem value="Documentation">Documentation</SelectItem>
-                      <SelectItem value="Marketing">Marketing</SelectItem>
                       <SelectItem value="Research">Research</SelectItem>
+                      <SelectItem value="Planning">Planning</SelectItem>
+                      <SelectItem value="Marketing">Marketing</SelectItem>
+                      <SelectItem value="Strategy">Strategy</SelectItem>
+                      <SelectItem value="Communication">Communication</SelectItem>
+                      <SelectItem value="Administration">Administration</SelectItem>
+                      <SelectItem value="Finance">Finance</SelectItem>
+                      <SelectItem value="Legal">Legal</SelectItem>
+                      <SelectItem value="Operations">Operations</SelectItem>
+                      <SelectItem value="Misc">Misc</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1642,7 +1657,7 @@ export default function Dashboard() {
   }
 
   const TaskManagementModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-gray-200/70 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         {/* Modal Header */}
         <div className="flex items-center justify-between p-6 border-b">
@@ -1679,9 +1694,12 @@ export default function Dashboard() {
                     <div className="w-5 h-5 border-2 border-gray-300 rounded-full"></div>
                   </div>
 
-                  {/* Code Icon */}
+                  {/* Category Icon */}
                   <div className="flex items-center pt-1">
-                    <Code size={16} className="text-gray-400" />
+                    {(() => {
+                      const CategoryIcon = getCategoryIcon(task.category)
+                      return <CategoryIcon size={16} className="text-gray-400" />
+                    })()}
                   </div>
 
                   {/* Task Content */}
@@ -1706,7 +1724,10 @@ export default function Dashboard() {
                     >
                       <Edit size={16} className="text-gray-500" />
                     </button>
-                    <button className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+                    <button 
+                      onClick={() => handleDeleteTask(task)}
+                      className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+                    >
                       <Trash2 size={16} className="text-gray-500" />
                     </button>
                   </div>
@@ -1723,7 +1744,7 @@ export default function Dashboard() {
     if (!showResetConfirmation) return null
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-gray-200/70 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
           {/* Modal Header */}
           <div className="p-6 border-b">
@@ -1896,7 +1917,7 @@ export default function Dashboard() {
                   size="sm"
                   variant="primary"
                 >
-                  New task
+                  Task Hub
                 </LoadingButton>
                 <button 
                   onClick={handleResetData}
@@ -2030,7 +2051,10 @@ export default function Dashboard() {
                   {tasks.map((task) => (
                     <div key={task.id} className="flex items-start gap-3">
                       <div className="flex items-center gap-2 mt-1">
-                        <Code size={14} className="text-gray-400" />
+                        {(() => {
+                          const CategoryIcon = getCategoryIcon(task.category)
+                          return <CategoryIcon size={14} className="text-gray-400" />
+                        })()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 mb-1">{task.title}</p>
@@ -2126,18 +2150,7 @@ export default function Dashboard() {
                       return acc
                     }, {} as Record<string, { total: number; completed: number }>)
 
-                    // Get category icon
-                    const getCategoryIcon = (category: string) => {
-                      switch (category) {
-                        case 'Development': return Code
-                        case 'Design': return Target
-                        case 'Testing': return CheckCircle
-                        case 'Documentation': return Edit
-                        case 'Marketing': return TrendingUp
-                        case 'Research': return BarChart3
-                        default: return Activity
-                      }
-                    }
+                    // Using shared category icon function
 
                                          return Object.entries(categoryGroups).length > 0 ? (
                        Object.entries(categoryGroups).map(([category, data]) => {
@@ -2146,19 +2159,19 @@ export default function Dashboard() {
                         
                         return (
                           <div key={category} className="flex items-center gap-3 mb-2">
-                            <div className="flex items-center gap-2">
-                              <Icon size={14} className="text-gray-600" />
-                              <span className="text-sm text-gray-600">{category}</span>
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <Icon size={14} className="text-gray-600 flex-shrink-0" />
+                              <span className="text-sm text-gray-600 truncate">{category}</span>
                             </div>
-                            <div className="flex-1">
-                                                            <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div className="w-24 flex-shrink-0">
+                              <div className="w-full bg-gray-200 rounded-full h-2">
                                 <div 
                                  className="bg-gray-800 h-2 rounded-full" 
                                  style={{ width: `${safeWidth(categoryData.completed, categoryData.total)}%` }}
                                ></div>
                              </div>
                            </div>
-                           <span className="text-sm text-gray-500">{categoryData.completed}/{categoryData.total}</span>
+                           <span className="text-sm text-gray-500 w-8 text-right flex-shrink-0">{categoryData.completed}/{categoryData.total}</span>
                           </div>
                         )
                       })

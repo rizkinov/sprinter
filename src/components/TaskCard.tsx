@@ -1,7 +1,8 @@
 'use client'
 
 import React from 'react'
-import { Edit, Trash2, Code } from 'lucide-react'
+import { Edit, Trash2 } from 'lucide-react'
+import { getCategoryIcon } from '../lib/utils'
 
 interface TaskCardProps {
   task: {
@@ -28,18 +29,18 @@ const StatusBadge = ({ status, className = '' }: { status: string; className?: s
   const getStatusStyles = (status: string) => {
     switch (status.toLowerCase()) {
       case 'high':
-        return 'bg-red-100 text-red-800 border-red-200'
+        return 'bg-gray-900 text-white'
       case 'medium':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200'
+        return 'bg-gray-600 text-white'
       case 'low':
-        return 'bg-green-100 text-green-800 border-green-200'
+        return 'bg-gray-400 text-white'
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200'
+        return 'bg-gray-100 text-gray-800'
     }
   }
 
   return (
-    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getStatusStyles(status)} ${className}`}>
+    <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${getStatusStyles(status)} ${className}`}>
       {status}
     </span>
   )
@@ -104,7 +105,10 @@ const TaskCard = React.memo(function TaskCard({
               aria-label={`Select task: ${task.title}`}
             />
           )}
-          <Code size={14} className="text-gray-500" />
+          {(() => {
+            const CategoryIcon = getCategoryIcon(task.category)
+            return <CategoryIcon size={14} className="text-gray-500" />
+          })()}
         </div>
         <div className="flex items-center gap-1">
           <button 

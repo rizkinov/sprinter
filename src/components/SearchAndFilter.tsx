@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { Search, Filter, X } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface SearchAndFilterProps {
   searchTerm: string
@@ -91,47 +92,50 @@ export default function SearchAndFilter({
             {/* Status Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => onStatusFilterChange(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent outline-none"
-              >
-                <option value="all">All Statuses</option>
-                <option value="Not Started">Not Started</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Completed">Completed</option>
-                <option value="Blocked">Blocked</option>
-              </select>
+              <Select value={statusFilter} onValueChange={onStatusFilterChange}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="Not Started">Not Started</SelectItem>
+                  <SelectItem value="In Progress">In Progress</SelectItem>
+                  <SelectItem value="Completed">Completed</SelectItem>
+                  <SelectItem value="Blocked">Blocked</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Priority Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-              <select
-                value={priorityFilter}
-                onChange={(e) => onPriorityFilterChange(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent outline-none"
-              >
-                <option value="all">All Priorities</option>
-                <option value="High">High</option>
-                <option value="Medium">Medium</option>
-                <option value="Low">Low</option>
-              </select>
+              <Select value={priorityFilter} onValueChange={onPriorityFilterChange}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Priorities</SelectItem>
+                  <SelectItem value="High">High</SelectItem>
+                  <SelectItem value="Medium">Medium</SelectItem>
+                  <SelectItem value="Low">Low</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Category Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-              <select
-                value={categoryFilter}
-                onChange={(e) => onCategoryFilterChange(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent outline-none"
-              >
-                <option value="all">All Categories</option>
-                {availableCategories.map(category => (
-                  <option key={category} value={category}>{category}</option>
-                ))}
-              </select>
+              <Select value={categoryFilter} onValueChange={onCategoryFilterChange}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {availableCategories.map(category => (
+                    <SelectItem key={category} value={category}>{category}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>
