@@ -15,7 +15,6 @@ import {
   CheckCircle,
   CheckSquare,
   Activity,
-  Code,
   Edit,
   Trash2,
   X,
@@ -23,12 +22,9 @@ import {
   Settings,
   LogOut,
   User,
-  Menu,
   ChevronLeft,
   ChevronRight,
-  Library,
-  Star,
-  Filter
+  Library
 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -816,7 +812,7 @@ export default function Dashboard() {
       }
 
       return { isValid: true }
-    } catch (error) {
+    } catch {
       return { isValid: false, error: 'Failed to parse template file' }
     }
   }
@@ -3624,7 +3620,7 @@ export default function Dashboard() {
               <div className="bg-white rounded-lg shadow-sm border p-6">
                 <div className="flex items-center gap-2 mb-4">
                   <Target size={18} className="text-gray-700" />
-                  <h2 className="text-lg font-semibold">This Week's Goals</h2>
+                  <h2 className="text-lg font-semibold">This Week&apos;s Goals</h2>
                 </div>
                 <p className="text-sm text-gray-500 mb-4">
                   {milestones.length > 0 
@@ -4493,7 +4489,7 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="space-y-8">
-                {milestones.map((milestone, index) => {
+                {milestones.map((milestone) => {
                   const getBorderColor = () => {
                     if (milestone.status === 'Completed') return 'border-green-500'
                     if (milestone.status === 'In Progress') return 'border-blue-500'

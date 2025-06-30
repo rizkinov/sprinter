@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { Code, Palette, CheckCircle, Edit, TrendingUp, BarChart3, Activity, Folder, MessageSquare, Star, FileText, Zap, Users, DollarSign, Scale, Settings, Lightbulb, Target } from "lucide-react"
+import { Code, Palette, CheckCircle, Edit, TrendingUp, BarChart3, Activity, Folder, MessageSquare, Star, FileText, Users, DollarSign, Scale, Settings, Lightbulb, Target } from "lucide-react"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))

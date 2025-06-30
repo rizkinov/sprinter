@@ -61,6 +61,8 @@ next-env.d.ts
 *.swo
 
 # OS
+.DS_Store
+**/.DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
@@ -101,16 +103,4 @@ temp/
 *.sln
 *.sw?
 
-# Legacy files (old React components)
-App.css
-App.jsx
-KanbanBoard.jsx
-ProgressCharts.jsx
-TaskManager.jsx
-dataManager.js
-index.html
-todo.md
-Dashboard Structure & Tracking Categories.md
-Detailed Milestone Plan: Budgeting SaaS Development.md
-SaaS Project Analysis: Notion-like Budgeting App.md
-Solo Founder Dashboard - User Guide.md
+
