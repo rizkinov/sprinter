@@ -1078,14 +1078,15 @@ export default function Dashboard() {
       }
       
       // Create new project with template data
-      console.log('Creating project with info:', projectInfo)
-      await createNewProject(projectInfo)
+      const projectId = await createNewProject(projectInfo)
       
-      // Wait a moment for the project to be created and set as current
-      await new Promise(resolve => setTimeout(resolve, 100))
+      if (!projectId) {
+        throw new Error('Failed to create project')
+      }
       
-      // Add tasks with converted due dates
+      // Add tasks with converted due dates directly to database
       if (template.tasks && template.tasks.length > 0) {
+        const createdTasks = []
         for (const task of template.tasks) {
           let dueDate = null
           if (task.dueDateOffset) {
@@ -1094,19 +1095,48 @@ export default function Dashboard() {
             dueDate = taskDueDate.toISOString()
           }
           
-          await createNewTask({
+          const taskData: any = {
+            project_id: projectId,
+            user_id: user.id,
             title: task.title,
             description: task.description || '',
             category: task.category,
             priority: task.priority,
-            estimatedHours: task.estimatedHours,
-            dueDate: dueDate
-          })
+            status: 'Not Started',
+            estimated_hours: task.estimatedHours || 0,
+            actual_hours: 0,
+            sprint_week: 1
+          }
+          
+          if (dueDate) {
+            taskData.due_date = dueDate
+          }
+          
+          const createdTask = await db.createTask(taskData)
+          
+          if (createdTask) {
+            createdTasks.push({
+              id: createdTask.id,
+              title: createdTask.title,
+              description: createdTask.description || '',
+              category: createdTask.category,
+              priority: createdTask.priority,
+              status: createdTask.status,
+              estimatedHours: createdTask.estimated_hours,
+              actualHours: createdTask.actual_hours,
+              dueDate: createdTask.due_date,
+              createdAt: createdTask.created_at,
+              completedAt: createdTask.completed_at || undefined,
+              sprintWeek: createdTask.sprint_week
+            })
+          }
         }
+        setTasks(createdTasks)
       }
       
-      // Add milestones with converted target dates
+      // Add milestones with converted target dates directly to database
       if (template.milestones && template.milestones.length > 0) {
+        const createdMilestones = []
         for (const milestone of template.milestones) {
           let targetDate = null
           if (milestone.dueDateOffset) {
@@ -1115,14 +1145,35 @@ export default function Dashboard() {
             targetDate = milestoneDate.toISOString()
           }
           
-          await createNewMilestone({
+          const milestoneData: any = {
+            project_id: projectId,
+            user_id: user.id,
             title: milestone.title,
             description: milestone.description || '',
-            targetDate: targetDate,
             status: 'Not Started',
             progress: 0
-          })
+          }
+          
+          if (targetDate) {
+            milestoneData.target_date = targetDate
+          }
+          
+          const createdMilestone = await db.createMilestone(milestoneData)
+          
+          if (createdMilestone) {
+            createdMilestones.push({
+              id: createdMilestone.id,
+              title: createdMilestone.title,
+              description: createdMilestone.description || '',
+              targetDate: createdMilestone.target_date,
+              status: createdMilestone.status,
+              progress: createdMilestone.progress,
+              createdAt: createdMilestone.created_at,
+              tasks: []
+            })
+          }
         }
+        setMilestones(createdMilestones)
       }
       
       // Close template library
@@ -1150,16 +1201,6 @@ export default function Dashboard() {
     setIsCreatingProject(true)
     setError(null)
     try {
-      console.log('Creating project with data:', {
-        user_id: user.id,
-        name: projectInfo.name,
-        description: projectInfo.description,
-        start_date: projectInfo.startDate,
-        target_launch_date: projectInfo.targetLaunchDate,
-        current_sprint: 1,
-        total_sprints: projectInfo.totalSprints || 16
-      })
-      
       const project = await db.createProject({
         user_id: user.id,
         name: projectInfo.name,
