@@ -2101,14 +2101,23 @@ export default function Dashboard() {
 
               {/* Action Buttons */}
               <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => handleExportProject('json')}
-                  className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-1.5 rounded text-sm font-medium flex items-center gap-1.5 transition-colors"
-                  title="Export project as JSON"
-                >
-                  <Download size={14} />
-                  Export
-                </button>
+                <div className="relative">
+                  <Select onValueChange={(value: ExportFormat) => {
+                    if (value) {
+                      handleExportProject(value)
+                    }
+                  }}>
+                    <SelectTrigger className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-1.5 text-sm font-medium flex items-center gap-1.5 transition-colors border-none bg-transparent">
+                      <Download size={14} />
+                      Export
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="json">Export as JSON</SelectItem>
+                      <SelectItem value="csv">Export as CSV</SelectItem>
+                      <SelectItem value="template">Save as Template</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <LoadingButton
                   onClick={() => setShowTaskModal(true)}
                   loading={isCreatingTask}
@@ -2684,6 +2693,7 @@ export default function Dashboard() {
                     <SelectContent>
                       <SelectItem value="json">Export as JSON</SelectItem>
                       <SelectItem value="csv">Export as CSV</SelectItem>
+                      <SelectItem value="template">Save as Template</SelectItem>
                     </SelectContent>
                   </Select>
 
