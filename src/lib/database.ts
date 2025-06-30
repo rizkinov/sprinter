@@ -45,6 +45,8 @@ export class DatabaseService {
   }
 
   async createProject(project: ProjectInsert): Promise<Project | null> {
+    console.log('DatabaseService.createProject called with:', JSON.stringify(project, null, 2))
+    
     const { data, error } = await this.supabase
       .from('projects')
       .insert(project)
@@ -52,10 +54,18 @@ export class DatabaseService {
       .single()
 
     if (error) {
-      console.error('Error creating project:', error)
+      console.error('Error creating project:', JSON.stringify({
+        error: error,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        projectData: project
+      }, null, 2))
       throw error
     }
 
+    console.log('Project created successfully:', JSON.stringify(data, null, 2))
     return data
   }
 
@@ -73,6 +83,45 @@ export class DatabaseService {
     }
 
     return data
+  }
+
+  async deleteProject(projectId: string, userId: string): Promise<boolean> {
+    // First delete all associated tasks and milestones
+    const { error: tasksError } = await this.supabase
+      .from('tasks')
+      .delete()
+      .eq('project_id', projectId)
+      .eq('user_id', userId)
+
+    if (tasksError) {
+      console.error('Error deleting project tasks:', tasksError)
+      throw tasksError
+    }
+
+    const { error: milestonesError } = await this.supabase
+      .from('milestones')
+      .delete()
+      .eq('project_id', projectId)
+      .eq('user_id', userId)
+
+    if (milestonesError) {
+      console.error('Error deleting project milestones:', milestonesError)
+      throw milestonesError
+    }
+
+    // Then delete the project itself
+    const { error: projectError } = await this.supabase
+      .from('projects')
+      .delete()
+      .eq('id', projectId)
+      .eq('user_id', userId)
+
+    if (projectError) {
+      console.error('Error deleting project:', projectError)
+      throw projectError
+    }
+
+    return true
   }
 
   // Task operations
@@ -214,6 +263,21 @@ export class DatabaseService {
     return data
   }
 
+  async deleteMilestone(milestoneId: string, userId: string): Promise<boolean> {
+    const { error } = await this.supabase
+      .from('milestones')
+      .delete()
+      .eq('id', milestoneId)
+      .eq('user_id', userId)
+
+    if (error) {
+      console.error('Error deleting milestone:', error)
+      throw error
+    }
+
+    return true
+  }
+
   // Analytics operations
   async getTaskAnalytics(projectId: string, userId: string) {
     const tasks = await this.getTasks(projectId, userId)
@@ -251,39 +315,7 @@ export class DatabaseService {
     }
   }
 
-  // Delete all user data (for reset functionality)
-  async resetAllUserData(userId: string) {
-    try {
-      // Delete all user's tasks first (due to foreign key constraints)
-      const { error: tasksError } = await this.supabase
-        .from('tasks')
-        .delete()
-        .eq('user_id', userId)
 
-      if (tasksError) throw tasksError
-
-      // Delete all user's milestones
-      const { error: milestonesError } = await this.supabase
-        .from('milestones')
-        .delete()
-        .eq('user_id', userId)
-
-      if (milestonesError) throw milestonesError
-
-      // Delete all user's projects
-      const { error: projectsError } = await this.supabase
-        .from('projects')
-        .delete()
-        .eq('user_id', userId)
-
-      if (projectsError) throw projectsError
-
-      return true
-    } catch (error) {
-      console.error('Error resetting user data:', error)
-      throw error
-    }
-  }
 }
 
 // Export a singleton instance

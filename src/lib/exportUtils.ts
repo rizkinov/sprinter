@@ -15,7 +15,7 @@ export interface ProjectTemplate {
     estimated_duration_weeks: number
     tags: string[]
   }
-  project_template: {
+  project: {
     name: string
     description: string
     total_sprints: number
@@ -408,7 +408,7 @@ export function exportProjectTemplate(
       estimated_duration_weeks: durationWeeks,
       tags: templateTags
     },
-    project_template: {
+    project: {
       name: projectName,
       description: projectData.description || '',
       total_sprints: projectData.totalSprints || 16,

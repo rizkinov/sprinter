@@ -59,7 +59,6 @@ export default function Dashboard() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showAddMilestoneModal, setShowAddMilestoneModal] = useState(false)
   const [showProjectSetup, setShowProjectSetup] = useState(false)
-  const [showResetConfirmation, setShowResetConfirmation] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [editingMilestone, setEditingMilestone] = useState<any>(null)
   const [showEditMilestoneModal, setShowEditMilestoneModal] = useState(false)
@@ -77,6 +76,11 @@ export default function Dashboard() {
   // Delete confirmation state
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
   const [taskToDelete, setTaskToDelete] = useState<any>(null)
+  
+  // Project delete confirmation state
+  const [showProjectDeleteConfirmation, setShowProjectDeleteConfirmation] = useState(false)
+  const [projectToDelete, setProjectToDelete] = useState<any>(null)
+  const [isDeletingProject, setIsDeletingProject] = useState(false)
   
   // Search and filter state
   const [searchTerm, setSearchTerm] = useState('')
@@ -154,8 +158,34 @@ export default function Dashboard() {
         db.getTasks(projectId, user.id),
         db.getMilestones(projectId, user.id)
       ])
-      setTasks(projectTasks || [])
-      setMilestones(projectMilestones || [])
+      
+      // Transform tasks from database format to UI format
+      setTasks((projectTasks || []).map(task => ({
+        id: task.id,
+        title: task.title,
+        description: task.description || '',
+        category: task.category,
+        priority: task.priority,
+        status: task.status,
+        estimatedHours: task.estimated_hours,
+        actualHours: task.actual_hours,
+        dueDate: task.due_date,
+        createdAt: task.created_at,
+        completedAt: task.completed_at || undefined,
+        sprintWeek: task.sprint_week
+      })))
+
+      // Transform milestones from database format to UI format
+      setMilestones((projectMilestones || []).map(milestone => ({
+        id: milestone.id,
+        title: milestone.title,
+        description: milestone.description || '',
+        targetDate: milestone.target_date,
+        status: milestone.status,
+        progress: milestone.progress,
+        createdAt: milestone.created_at,
+        tasks: [] // We'll populate this later if needed
+      })))
     } catch (error) {
       console.error('Error loading project data:', error)
     }
@@ -210,14 +240,28 @@ export default function Dashboard() {
           {/* Current Project */}
           {currentProject && (
             <div className="mb-4">
-              <div className={`flex items-center gap-3 p-2 rounded-lg bg-gray-100 ${
+              <div className={`flex items-center gap-2 p-2 rounded-lg bg-gray-100 group ${
                 sidebarCollapsed ? 'justify-center' : ''
               }`}>
-                <Folder size={16} className="text-gray-600 flex-shrink-0" />
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <Folder size={16} className="text-gray-600 flex-shrink-0" />
+                  {!sidebarCollapsed && (
+                    <span className="text-sm font-medium text-gray-900 truncate">
+                      {currentProject.name}
+                    </span>
+                  )}
+                </div>
                 {!sidebarCollapsed && (
-                  <span className="text-sm font-medium text-gray-900 truncate">
-                    {currentProject.name}
-                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDeleteProject(currentProject)
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition-all duration-200"
+                    title="Delete project"
+                  >
+                    <Trash2 size={14} className="text-red-500" />
+                  </button>
                 )}
               </div>
             </div>
@@ -225,18 +269,34 @@ export default function Dashboard() {
 
           {/* Other Projects */}
           {projects.filter(p => p.id !== activeProjectId).map((project) => (
-            <button
+            <div
               key={project.id}
-              onClick={() => switchProject(project.id)}
-              className={`w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors mb-1 ${
+              className={`w-full flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 transition-colors mb-1 group ${
                 sidebarCollapsed ? 'justify-center' : ''
               }`}
             >
-              <Folder size={16} className="text-gray-400 flex-shrink-0" />
+              <button
+                onClick={() => switchProject(project.id)}
+                className="flex items-center gap-3 flex-1 min-w-0"
+              >
+                <Folder size={16} className="text-gray-400 flex-shrink-0" />
+                {!sidebarCollapsed && (
+                  <span className="text-sm text-gray-700 truncate">{project.name}</span>
+                )}
+              </button>
               {!sidebarCollapsed && (
-                <span className="text-sm text-gray-700 truncate">{project.name}</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDeleteProject(project)
+                  }}
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition-all duration-200"
+                  title="Delete project"
+                >
+                  <Trash2 size={14} className="text-red-500" />
+                </button>
               )}
-            </button>
+            </div>
           ))}
 
           {/* New Project Button */}
@@ -817,8 +877,21 @@ export default function Dashboard() {
       const text = await file.text()
       const template = JSON.parse(text)
       
+      // Debug: Log the template structure
+      console.log('Imported template structure:', {
+        version: template.version,
+        hasMetadata: !!template.metadata,
+        hasProject: !!template.project,
+        hasTasks: Array.isArray(template.tasks),
+        hasMilestones: Array.isArray(template.milestones),
+        metadataFields: template.metadata ? Object.keys(template.metadata) : [],
+        projectFields: template.project ? Object.keys(template.project) : [],
+        fullTemplate: template
+      })
+      
       const validation = validateTemplate(template)
       if (!validation.isValid) {
+        console.error('Template validation failed:', validation.error)
         setImportError(validation.error || 'Invalid template')
         return
       }
@@ -828,6 +901,7 @@ export default function Dashboard() {
       setImportedTemplate(processedTemplate)
       setShowTemplatePreview(true)
     } catch (error) {
+      console.error('Error reading template file:', error)
       setImportError('Failed to read template file. Please ensure it\'s a valid JSON file.')
     }
   }
@@ -842,15 +916,28 @@ export default function Dashboard() {
       if (importMode === 'new-project') {
         // Create new project from template
         const projectData = importedTemplate.project || importedTemplate.projectData
-        const project = await db.createProject({
+        console.log('Project data from template:', JSON.stringify(projectData, null, 2))
+        console.log('User ID:', user.id)
+        console.log('Full imported template:', JSON.stringify(importedTemplate, null, 2))
+        
+        // Calculate default target launch date (16 weeks from start date)
+        const startDate = projectData?.start_date ? new Date(projectData.start_date) : new Date()
+        const defaultLaunchDate = new Date(startDate)
+        defaultLaunchDate.setDate(defaultLaunchDate.getDate() + (16 * 7)) // 16 weeks
+        
+        const projectInsertData = {
           user_id: user.id,
-          name: projectData.name || importedTemplate.metadata?.name || 'Imported Project',
-          description: projectData.description || importedTemplate.metadata?.description || '',
-          start_date: projectData.start_date || new Date().toISOString(),
-          target_launch_date: projectData.target_launch_date,
-          current_sprint: projectData.current_sprint || 1,
-          total_sprints: projectData.total_sprints || 16
-        })
+          name: projectData?.name || importedTemplate.metadata?.name || 'Imported Project',
+          description: projectData?.description || importedTemplate.metadata?.description || '',
+          start_date: projectData?.start_date || new Date().toISOString(),
+          target_launch_date: projectData?.target_launch_date || defaultLaunchDate.toISOString(),
+          current_sprint: projectData?.current_sprint || 1,
+          total_sprints: projectData?.total_sprints || 16
+        }
+        
+        console.log('Data being sent to createProject:', JSON.stringify(projectInsertData, null, 2))
+        
+        const project = await db.createProject(projectInsertData)
 
         if (project) {
           // Set as active project
@@ -869,12 +956,17 @@ export default function Dashboard() {
           // Import milestones
           const importedMilestones = []
           for (const milestoneData of importedTemplate.milestones || []) {
+            // Calculate default target date if missing (use launch date or 4 weeks from start)
+            const milestoneStartDate = new Date(projectInsertData.start_date)
+            const defaultTargetDate = new Date(milestoneStartDate)
+            defaultTargetDate.setDate(defaultTargetDate.getDate() + (4 * 7)) // 4 weeks default
+            
             const milestone = await db.createMilestone({
               project_id: project.id,
               user_id: user.id,
               title: milestoneData.title,
               description: milestoneData.description || '',
-              target_date: milestoneData.target_date,
+              target_date: milestoneData.target_date || defaultTargetDate.toISOString(),
               status: 'Not Started',
               progress: 0
             })
@@ -896,6 +988,11 @@ export default function Dashboard() {
           // Import tasks
           const importedTasks = []
           for (const taskData of importedTemplate.tasks || []) {
+            // Calculate default due date if missing (1 week from start date + sprint offset)
+            const taskStartDate = new Date(projectInsertData.start_date)
+            const defaultDueDate = new Date(taskStartDate)
+            defaultDueDate.setDate(defaultDueDate.getDate() + ((taskData.sprint_week || 1) * 7))
+            
             const task = await db.createTask({
               project_id: project.id,
               user_id: user.id,
@@ -906,7 +1003,7 @@ export default function Dashboard() {
               status: 'Not Started',
               estimated_hours: taskData.estimated_hours || 0,
               actual_hours: 0,
-              due_date: taskData.due_date,
+              due_date: taskData.due_date || defaultDueDate.toISOString(),
               sprint_week: taskData.sprint_week || 1
             })
 
@@ -967,12 +1064,17 @@ export default function Dashboard() {
         // Import new milestones and tasks (same logic as above)
         const importedMilestones = []
         for (const milestoneData of importedTemplate.milestones || []) {
+          // Calculate default target date if missing
+          const milestoneStartDate = new Date(currentProject.start_date)
+          const defaultTargetDate = new Date(milestoneStartDate)
+          defaultTargetDate.setDate(defaultTargetDate.getDate() + (4 * 7)) // 4 weeks default
+          
           const milestone = await db.createMilestone({
             project_id: currentProject.id,
             user_id: user.id,
             title: milestoneData.title,
             description: milestoneData.description || '',
-            target_date: milestoneData.target_date,
+            target_date: milestoneData.target_date || defaultTargetDate.toISOString(),
             status: 'Not Started',
             progress: 0
           })
@@ -993,6 +1095,11 @@ export default function Dashboard() {
 
         const importedTasks = []
         for (const taskData of importedTemplate.tasks || []) {
+          // Calculate default due date if missing
+          const taskStartDate = new Date(currentProject.start_date)
+          const defaultDueDate = new Date(taskStartDate)
+          defaultDueDate.setDate(defaultDueDate.getDate() + ((taskData.sprint_week || 1) * 7))
+          
           const task = await db.createTask({
             project_id: currentProject.id,
             user_id: user.id,
@@ -1003,7 +1110,7 @@ export default function Dashboard() {
             status: 'Not Started',
             estimated_hours: taskData.estimated_hours || 0,
             actual_hours: 0,
-            due_date: taskData.due_date,
+            due_date: taskData.due_date || defaultDueDate.toISOString(),
             sprint_week: taskData.sprint_week || 1
           })
 
@@ -1034,8 +1141,15 @@ export default function Dashboard() {
       setImportedTemplate(null)
 
     } catch (error) {
-      console.error('Error importing template:', error)
-      setImportError('Failed to import template. Please try again.')
+      console.error('Error importing template:', {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        importedTemplate: importedTemplate,
+        importMode: importMode,
+        user: user ? { id: user.id, email: user.email } : null
+      })
+      setImportError(`Failed to import template: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsImporting(false)
     }
@@ -1386,6 +1500,63 @@ export default function Dashboard() {
     setTaskToDelete(null)
   }
 
+  // Project delete handlers
+  const handleDeleteProject = (project: any) => {
+    setProjectToDelete(project)
+    setShowProjectDeleteConfirmation(true)
+  }
+
+  const handleConfirmDeleteProject = async () => {
+    if (!projectToDelete || !user) return
+    
+    setIsDeletingProject(true)
+    try {
+      await db.deleteProject(projectToDelete.id, user.id)
+      
+      // Remove project from local state
+      const updatedProjects = projects.filter(p => p.id !== projectToDelete.id)
+      setProjects(updatedProjects)
+      
+      // If the deleted project was the active one, switch to another project
+      if (projectToDelete.id === activeProjectId) {
+        if (updatedProjects.length > 0) {
+          // Switch to the first available project
+          const nextProject = updatedProjects[0]
+          switchProject(nextProject.id)
+          localStorage.setItem('sprinter_active_project_id', nextProject.id)
+        } else {
+          // No projects left, reset to empty state
+          setCurrentProject(null)
+          setActiveProjectId(null)
+          setTasks([])
+          setMilestones([])
+          setProjectData({
+            projectName: '',
+            startDate: '',
+            targetLaunchDate: '',
+            description: '',
+            currentSprint: 1,
+            totalSprints: 16
+          })
+          localStorage.removeItem('sprinter_active_project_id')
+        }
+      }
+      
+      setShowProjectDeleteConfirmation(false)
+      setProjectToDelete(null)
+    } catch (error) {
+      console.error('Error deleting project:', error)
+      setError('Failed to delete project. Please try again.')
+    } finally {
+      setIsDeletingProject(false)
+    }
+  }
+
+  const handleCancelDeleteProject = () => {
+    setShowProjectDeleteConfirmation(false)
+    setProjectToDelete(null)
+  }
+
   // Memoized event handlers to prevent unnecessary re-renders
   const handleClearFilters = useCallback(() => {
     setSearchTerm('')
@@ -1564,40 +1735,7 @@ export default function Dashboard() {
     setShowProjectSetup(false)
   }
 
-  const handleResetData = () => {
-    setShowResetConfirmation(true)
-  }
 
-  const handleConfirmReset = async () => {
-    if (!user) return
-
-    try {
-      await db.resetAllUserData(user.id)
-      
-      // Reset local state
-      setCurrentProject(null)
-      setTasks([])
-      setMilestones([])
-      setProjectData({
-        projectName: '',
-        startDate: '',
-        targetLaunchDate: '',
-        description: '',
-        currentSprint: 1,
-        totalSprints: 16
-      })
-      
-      setShowResetConfirmation(false)
-      setActiveTab('dashboard') // Go back to dashboard
-    } catch (error) {
-      console.error('Error resetting data:', error)
-      alert('Failed to reset data. Please try again.')
-    }
-  }
-
-  const handleCancelReset = () => {
-    setShowResetConfirmation(false)
-  }
 
   const handleEditMilestone = (milestone: any) => {
     setEditingMilestone(milestone)
@@ -3233,62 +3371,7 @@ export default function Dashboard() {
     )
   }
 
-  const ResetConfirmationModal = () => {
-    if (!showResetConfirmation) return null
 
-    return (
-      <div className="fixed inset-0 bg-gray-200/70 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-          {/* Modal Header */}
-          <div className="p-6 border-b">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-red-100 rounded-full">
-                <AlertTriangle size={20} className="text-red-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">Reset All Data</h2>
-                <p className="text-sm text-gray-500">This action cannot be undone</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Modal Content */}
-          <div className="p-6">
-            <div className="mb-6">
-              <p className="text-gray-700 mb-4">
-                Are you sure you want to reset all your data? This will permanently delete:
-              </p>
-              <ul className="text-sm text-gray-600 space-y-1 ml-4">
-                <li>• All projects</li>
-                <li>• All tasks</li>
-                <li>• All milestones</li>
-                <li>• All progress tracking</li>
-              </ul>
-              <p className="text-red-600 text-sm mt-4 font-medium">
-                This action cannot be undone. You will start with a completely clean slate.
-              </p>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={handleCancelReset}
-                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmReset}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium"
-              >
-                Yes, Reset All Data
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   // Show loading state
   if (loading) {
@@ -3443,12 +3526,6 @@ export default function Dashboard() {
                 >
                   Task Hub
                 </LoadingButton>
-                <button 
-                  onClick={handleResetData}
-                  className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-1.5 rounded text-sm font-medium transition-colors"
-                >
-                  Reset
-                </button>
               </div>
             </div>
           </div>
@@ -3593,36 +3670,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Focus Area */}
-              <div className="bg-white rounded-lg shadow-sm border p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <AlertTriangle size={18} className="text-gray-700" />
-                  <h2 className="text-lg font-semibold">Focus Area</h2>
-                  {focusArea.urgentCount > 0 && (
-                    <div className="ml-auto">
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                        {focusArea.urgentCount} urgent
-                      </span>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="mb-4">
-                  <h3 className="font-medium text-gray-900 mb-2">Top Priority Right Now</h3>
-                  <p className="text-sm text-gray-600 leading-relaxed">
-                    {focusArea.priority}
-                  </p>
-                </div>
-
-                <div>
-                  <h3 className="font-medium text-gray-900 mb-2">Success Actions</h3>
-                  <ul className="text-sm text-gray-600 space-y-1">
-                    {focusArea.metrics.map((metric: string, index: number) => (
-                      <li key={index} className="leading-relaxed">• {metric}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
             </div>
 
             {/* Middle Column */}
@@ -3878,6 +3925,37 @@ export default function Dashboard() {
                       Import Template
                     </button>
                   </div>
+                </div>
+              </div>
+
+              {/* Focus Area */}
+              <div className="bg-white rounded-lg shadow-sm border p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <AlertTriangle size={18} className="text-gray-700" />
+                  <h2 className="text-lg font-semibold">Focus Area</h2>
+                  {focusArea.urgentCount > 0 && (
+                    <div className="ml-auto">
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        {focusArea.urgentCount} urgent
+                      </span>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="mb-4">
+                  <h3 className="font-medium text-gray-900 mb-2">Top Priority Right Now</h3>
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    {focusArea.priority}
+                  </p>
+                </div>
+
+                <div>
+                  <h3 className="font-medium text-gray-900 mb-2">Success Actions</h3>
+                  <ul className="text-sm text-gray-600 space-y-1">
+                    {focusArea.metrics.map((metric: string, index: number) => (
+                      <li key={index} className="leading-relaxed">• {metric}</li>
+                    ))}
+                  </ul>
                 </div>
               </div>
             </div>
@@ -4525,9 +4603,6 @@ export default function Dashboard() {
       {/* Project Setup Modal */}
       {showProjectSetup && <ProjectSetupModal />}
       
-      {/* Reset Confirmation Modal */}
-      {showResetConfirmation && <ResetConfirmationModal />}
-      
       {/* Import Template Modals */}
       {showImportModal && !showTemplatePreview && <FileUploadModal />}
       {showTemplatePreview && <TemplatePreviewModal />}
@@ -4560,6 +4635,19 @@ export default function Dashboard() {
         cancelText="Cancel"
         variant="danger"
         isLoading={isBulkOperating}
+      />
+      
+      {/* Project Delete Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={showProjectDeleteConfirmation}
+        onClose={handleCancelDeleteProject}
+        onConfirm={handleConfirmDeleteProject}
+        title="Delete Project"
+        message={`Are you sure you want to delete "${projectToDelete?.name}"? This will permanently delete all tasks and milestones in this project. This action cannot be undone.`}
+        confirmText="Delete Project"
+        cancelText="Cancel"
+        variant="danger"
+        isLoading={isDeletingProject}
       />
       
       {/* Bulk Actions Bar */}
