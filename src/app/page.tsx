@@ -422,6 +422,159 @@ export default function Dashboard() {
     }
   }, [activeProjectId])
 
+  // Recent Wins / Achievements system
+  const [recentWins, setRecentWins] = useState<any[]>([])
+
+  // Generate achievements based on current progress
+  const generateRecentWins = useCallback(() => {
+    const wins: any[] = []
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const weekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000)
+
+    // Recent task completions (last 7 days)
+    const recentCompletedTasks = tasks.filter(task => {
+      if (task.status !== 'Completed' || !task.completedAt) return false
+      const completedDate = new Date(task.completedAt)
+      return completedDate >= weekStart
+    })
+
+    // Today's completions
+    const todayCompletions = recentCompletedTasks.filter(task => {
+      const completedDate = new Date(task.completedAt!)
+      return completedDate >= todayStart
+    })
+
+    // High priority task completions
+    const highPriorityCompletions = recentCompletedTasks.filter(task => 
+      task.priority === 'High'
+    )
+
+    // Category diversity achievements
+    const categoriesCompleted = [...new Set(recentCompletedTasks.map(task => task.category))]
+
+    // Milestone completions
+    const completedMilestones = milestones.filter(milestone => milestone.status === 'Completed')
+
+    // Add achievements
+    if (todayCompletions.length > 0) {
+      wins.push({
+        id: `today-tasks-${todayCompletions.length}`,
+        type: 'task_completion',
+        title: `${todayCompletions.length} task${todayCompletions.length > 1 ? 's' : ''} completed today!`,
+        description: todayCompletions.map(t => t.title).slice(0, 2).join(', ') + (todayCompletions.length > 2 ? '...' : ''),
+        icon: 'CheckCircle',
+        color: 'text-green-600',
+        timestamp: now.toISOString()
+      })
+    }
+
+    if (highPriorityCompletions.length > 0) {
+      wins.push({
+        id: `high-priority-${highPriorityCompletions.length}`,
+        type: 'priority_achievement',
+        title: `${highPriorityCompletions.length} high-priority task${highPriorityCompletions.length > 1 ? 's' : ''} crushed!`,
+        description: `Completed: ${highPriorityCompletions.map(t => t.title).slice(0, 2).join(', ')}${highPriorityCompletions.length > 2 ? '...' : ''}`,
+        icon: 'Target',
+        color: 'text-orange-600',
+        timestamp: now.toISOString()
+      })
+    }
+
+    if (categoriesCompleted.length >= 3) {
+      wins.push({
+        id: `category-diversity-${categoriesCompleted.length}`,
+        type: 'diversity_achievement',
+        title: `Multi-tasking champion!`,
+        description: `Completed tasks across ${categoriesCompleted.length} categories: ${categoriesCompleted.slice(0, 3).join(', ')}`,
+        icon: 'Activity',
+        color: 'text-purple-600',
+        timestamp: now.toISOString()
+      })
+    }
+
+    if (completedMilestones.length > 0) {
+      wins.push({
+        id: `milestone-${completedMilestones[0].id}`,
+        type: 'milestone_achievement',
+        title: `Milestone achieved!`,
+        description: `Completed: ${completedMilestones[0].title}`,
+        icon: 'CalendarIcon',
+        color: 'text-blue-600',
+        timestamp: now.toISOString()
+      })
+    }
+
+    // Weekly streak achievement
+    if (recentCompletedTasks.length >= 5) {
+      wins.push({
+        id: `weekly-streak-${recentCompletedTasks.length}`,
+        type: 'streak_achievement',
+        title: `Productivity streak!`,
+        description: `${recentCompletedTasks.length} tasks completed this week`,
+        icon: 'TrendingUp',
+        color: 'text-indigo-600',
+        timestamp: now.toISOString()
+      })
+    }
+
+    // Total completion percentage milestone
+    const completionRate = safePercentage(completedTasks, tasks.length)
+    if (completionRate >= 50 && completionRate < 75 && tasks.length >= 5) {
+      wins.push({
+        id: `completion-50-milestone`,
+        type: 'progress_milestone',
+        title: `Halfway there!`,
+        description: `${completionRate}% project completion - keep going!`,
+        icon: 'BarChart3',
+        color: 'text-yellow-600',
+        timestamp: now.toISOString()
+      })
+    } else if (completionRate >= 75 && completionRate < 100 && tasks.length >= 5) {
+      wins.push({
+        id: `completion-75-milestone`,
+        type: 'progress_milestone',
+        title: `Almost there!`,
+        description: `${completionRate}% complete - final sprint!`,
+        icon: 'BarChart3',
+        color: 'text-orange-600',
+        timestamp: now.toISOString()
+      })
+    } else if (completionRate === 100 && tasks.length >= 5) {
+      wins.push({
+        id: `completion-100-milestone`,
+        type: 'progress_milestone',
+        title: `Project completed! 🎉`,
+        description: `All tasks done - time to celebrate!`,
+        icon: 'CheckSquare',
+        color: 'text-green-600',
+        timestamp: now.toISOString()
+      })
+    }
+
+    // First task completion
+    if (completedTasks === 1) {
+      wins.push({
+        id: `first-task-completion`,
+        type: 'first_achievement',
+        title: `First task completed!`,
+        description: `Welcome to productivity - you're on your way!`,
+        icon: 'CheckCircle',
+        color: 'text-green-600',
+        timestamp: now.toISOString()
+      })
+    }
+
+    // Limit to 5 most recent wins
+    return wins.slice(0, 5)
+  }, [tasks, milestones, completedTasks, safePercentage])
+
+  // Update recent wins when tasks/milestones change
+  useEffect(() => {
+    const wins = generateRecentWins()
+    setRecentWins(wins)
+  }, [generateRecentWins])
+
   const createNewProject = async (projectInfo: any) => {
     if (!user) return
 
@@ -2459,7 +2612,38 @@ export default function Dashboard() {
                   <CheckCircle size={18} className="text-gray-700" />
                   <h2 className="text-lg font-semibold">Recent Wins</h2>
                 </div>
-                <p className="text-sm text-gray-500">Complete your first task to see achievements here!</p>
+                {recentWins.length === 0 ? (
+                  <p className="text-sm text-gray-500">Complete your first task to see achievements here!</p>
+                ) : (
+                  <div className="space-y-3">
+                    {recentWins.map((win) => {
+                      const IconComponent = (() => {
+                        switch (win.icon) {
+                          case 'CheckCircle': return CheckCircle
+                          case 'Target': return Target
+                          case 'Activity': return Activity
+                          case 'CalendarIcon': return CalendarIcon
+                          case 'TrendingUp': return TrendingUp
+                          case 'BarChart3': return BarChart3
+                          case 'CheckSquare': return CheckSquare
+                          default: return CheckCircle
+                        }
+                      })()
+                      
+                      return (
+                        <div key={win.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                          <div className={`p-1.5 rounded-full bg-white ${win.color}`}>
+                            <IconComponent size={14} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium text-gray-900 text-sm mb-1">{win.title}</h3>
+                            <p className="text-xs text-gray-500 leading-relaxed">{win.description}</p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Quick Stats */}
