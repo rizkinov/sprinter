@@ -1055,37 +1055,72 @@ export default function Dashboard() {
     try {
       setIsLoading(true)
       
-      // Apply template using the existing import logic
-      const convertedTemplate = convertRelativeDates(template)
+      // Convert built-in template date offsets to actual dates
+      const baseDate = new Date()
+      
+      // Calculate project dates
+      const startDate = new Date(baseDate)
+      if (template.project.startDateOffset) {
+        startDate.setDate(startDate.getDate() + template.project.startDateOffset)
+      }
+      
+      const launchDate = new Date(baseDate)
+      if (template.project.launchDateOffset) {
+        launchDate.setDate(launchDate.getDate() + template.project.launchDateOffset)
+      }
+      
       const projectInfo = {
-        name: convertedTemplate.project.name,
-        description: convertedTemplate.project.description,
-        startDate: convertedTemplate.project.startDate,
-        targetLaunchDate: convertedTemplate.project.launchDate,
-        totalSprints: convertedTemplate.project.totalSprints
+        name: template.project.name,
+        description: template.project.description,
+        startDate: startDate.toISOString(),
+        targetLaunchDate: launchDate.toISOString(),
+        totalSprints: template.project.totalSprints
       }
       
       // Create new project with template data
+      console.log('Creating project with info:', projectInfo)
       await createNewProject(projectInfo)
       
       // Wait a moment for the project to be created and set as current
       await new Promise(resolve => setTimeout(resolve, 100))
       
-      // Add tasks and milestones to the current project
-      if (convertedTemplate.tasks && convertedTemplate.tasks.length > 0) {
-        for (const task of convertedTemplate.tasks) {
+      // Add tasks with converted due dates
+      if (template.tasks && template.tasks.length > 0) {
+        for (const task of template.tasks) {
+          let dueDate = null
+          if (task.dueDateOffset) {
+            const taskDueDate = new Date(baseDate)
+            taskDueDate.setDate(taskDueDate.getDate() + task.dueDateOffset)
+            dueDate = taskDueDate.toISOString()
+          }
+          
           await createNewTask({
-            ...task,
-            dueDate: task.dueDate || null
+            title: task.title,
+            description: task.description || '',
+            category: task.category,
+            priority: task.priority,
+            estimatedHours: task.estimatedHours,
+            dueDate: dueDate
           })
         }
       }
       
-      if (convertedTemplate.milestones && convertedTemplate.milestones.length > 0) {
-        for (const milestone of convertedTemplate.milestones) {
+      // Add milestones with converted target dates
+      if (template.milestones && template.milestones.length > 0) {
+        for (const milestone of template.milestones) {
+          let targetDate = null
+          if (milestone.dueDateOffset) {
+            const milestoneDate = new Date(baseDate)
+            milestoneDate.setDate(milestoneDate.getDate() + milestone.dueDateOffset)
+            targetDate = milestoneDate.toISOString()
+          }
+          
           await createNewMilestone({
-            ...milestone,
-            dueDate: milestone.dueDate || null
+            title: milestone.title,
+            description: milestone.description || '',
+            targetDate: targetDate,
+            status: 'Not Started',
+            progress: 0
           })
         }
       }
@@ -1110,11 +1145,21 @@ export default function Dashboard() {
       )
 
   const createNewProject = async (projectInfo: any) => {
-    if (!user) return
+    if (!user) return null
 
     setIsCreatingProject(true)
     setError(null)
     try {
+      console.log('Creating project with data:', {
+        user_id: user.id,
+        name: projectInfo.name,
+        description: projectInfo.description,
+        start_date: projectInfo.startDate,
+        target_launch_date: projectInfo.targetLaunchDate,
+        current_sprint: 1,
+        total_sprints: projectInfo.totalSprints || 16
+      })
+      
       const project = await db.createProject({
         user_id: user.id,
         name: projectInfo.name,
@@ -1166,14 +1211,19 @@ export default function Dashboard() {
             }])
           }
         }
+        
+        return project.id
       }
-          } catch (error) {
-        console.error('Error creating project:', error)
-        setError('Failed to create project. Please try again.')
-      } finally {
-        setIsCreatingProject(false)
-      }
+      
+      return null
+    } catch (error) {
+      console.error('Error creating project:', error, 'Project info was:', projectInfo)
+      setError('Failed to create project. Please try again.')
+      return null
+    } finally {
+      setIsCreatingProject(false)
     }
+  }
 
   const createNewTask = async (taskInfo: any) => {
     if (!user || !currentProject) return
