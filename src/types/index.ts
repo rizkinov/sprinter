@@ -198,4 +198,60 @@ export interface TaskAnalytics {
   lowPriorityTasks: number
   completionRate: number
   timeProgress: number
-} 
+}
+
+// Template system interfaces
+export interface TemplateMetadata {
+  name: string
+  description: string
+  author: string
+  difficulty: 'beginner' | 'intermediate' | 'advanced'
+  estimatedDuration: string
+  tags: string[]
+  category: string
+  techStack: string[]
+  aiContext: {
+    projectType: string
+    keyFeatures: string[]
+    targetAudience: string
+    monetization: string
+  }
+}
+
+export interface TemplateProject {
+  name: string
+  description: string
+  startDateOffset: number
+  launchDateOffset: number
+  totalSprints: number
+  currentSprint: number
+}
+
+export interface TemplateTask {
+  title: string
+  description?: string
+  category: TaskCategory
+  priority: TaskPriority
+  estimatedHours: number
+  status: TaskStatus
+  dueDateOffset: number
+  sprintWeek?: number
+}
+
+export interface TemplateMilestone {
+  title: string
+  description: string
+  dueDateOffset: number
+  status: MilestoneStatus
+}
+
+export interface ProjectTemplate {
+  version: string
+  metadata: TemplateMetadata
+  project: TemplateProject
+  tasks: TemplateTask[]
+  milestones: TemplateMilestone[]
+}
+
+// Export format types
+export type ExportFormat = 'json' | 'csv' | 'template' 
