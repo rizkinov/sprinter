@@ -14,6 +14,7 @@ interface TaskCardProps {
     status: string
     estimatedHours: number
     actualHours: number
+    dueDate?: string
   }
   draggedTask?: any
   onEditTask: (task: any) => void
@@ -138,6 +139,11 @@ const TaskCard = React.memo(function TaskCard({
         <StatusBadge status={task.priority.toLowerCase()} />
         <span className="text-xs text-gray-500">{task.actualHours}h / {task.estimatedHours}h</span>
       </div>
+      {task.dueDate && (
+        <div className="mb-3">
+          <span className="text-xs text-gray-500">Due: {new Date(task.dueDate).toLocaleDateString()}</span>
+        </div>
+      )}
       <div className="flex gap-1 flex-wrap">
         <span className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded font-medium border border-gray-300">
           {task.category}

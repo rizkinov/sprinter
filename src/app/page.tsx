@@ -1276,7 +1276,8 @@ export default function Dashboard() {
       priority: editingTask?.priority || 'Medium',
       estimatedHours: editingTask?.estimatedHours || 0,
       actualHours: editingTask?.actualHours || 0,
-      notes: editingTask?.notes || ''
+      notes: editingTask?.notes || '',
+      dueDate: editingTask?.dueDate ? new Date(editingTask.dueDate) : undefined
     })
 
     // Update form data when editingTask changes
@@ -1289,7 +1290,8 @@ export default function Dashboard() {
           priority: editingTask.priority || 'Medium',
           estimatedHours: editingTask.estimatedHours || 0,
           actualHours: editingTask.actualHours || 0,
-          notes: editingTask.notes || ''
+          notes: editingTask.notes || '',
+          dueDate: editingTask.dueDate ? new Date(editingTask.dueDate) : undefined
         })
       }
     }, [editingTask])
@@ -1306,13 +1308,20 @@ export default function Dashboard() {
           status: editFormData.status,
           priority: editFormData.priority,
           estimated_hours: editFormData.estimatedHours,
-          actual_hours: editFormData.actualHours
+          actual_hours: editFormData.actualHours,
+          due_date: editFormData.dueDate ? editFormData.dueDate.toISOString() : null
         })
 
         // Update local state
         setTasks(prev => prev.map(task => 
           task.id === editingTask.id 
-            ? { ...task, ...editFormData, estimatedHours: editFormData.estimatedHours, actualHours: editFormData.actualHours }
+            ? { 
+                ...task, 
+                ...editFormData, 
+                estimatedHours: editFormData.estimatedHours, 
+                actualHours: editFormData.actualHours,
+                dueDate: editFormData.dueDate ? editFormData.dueDate.toISOString() : undefined
+              }
             : task
         ))
 
@@ -1442,6 +1451,17 @@ export default function Dashboard() {
                     <SelectItem value="Low">Low</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Due Date */}
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-2">Due Date</label>
+                <DatePicker
+                  value={editFormData.dueDate}
+                  onChange={(date) => setEditFormData(prev => ({ ...prev, dueDate: date }))}
+                  placeholder="Select due date"
+                  name="dueDate"
+                />
               </div>
 
               {/* Notes */}
