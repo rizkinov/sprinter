@@ -1449,10 +1449,14 @@ export default function Dashboard() {
     }
 
   const updateTaskInDb = useCallback(async (taskId: string, updates: Record<string, any>) => {
-    if (!user) return
+    if (!user) {
+      console.error('No user found - cannot update task')
+      return
+    }
 
     try {
       const updatedTask = await db.updateTask(taskId, updates)
+      
       if (updatedTask) {
         setTasks(prev => prev.map(task => 
           task.id === taskId 
@@ -1465,15 +1469,20 @@ export default function Dashboard() {
                 status: updatedTask.status,
                 estimatedHours: updatedTask.estimated_hours,
                 actualHours: updatedTask.actual_hours,
-                completedAt: updatedTask.completed_at || undefined
+                completedAt: updatedTask.completed_at || undefined,
+                // Add time tracking fields to state
+                in_progress_started_at: updatedTask.in_progress_started_at,
+                in_progress_total_seconds: updatedTask.in_progress_total_seconds || 0,
+                last_status_change_at: updatedTask.last_status_change_at
               }
             : task
         ))
       }
     } catch (error) {
       console.error('Error updating task:', error)
+      throw error // Re-throw so handleDrop can catch it
     }
-  }, [])
+  }, [user])
 
   // Removed unused deleteTaskFromDb function
 
@@ -1807,7 +1816,19 @@ export default function Dashboard() {
       )
       
       // Update in database
-      await updateTaskInDb(draggedTask.id, { status: newStatus })
+      try {
+        await updateTaskInDb(draggedTask.id, { status: newStatus })
+      } catch (error) {
+        console.error(`Failed to update task ${draggedTask.title}:`, error)
+        // Revert UI state on failure
+        setTasks(prevTasks => 
+          prevTasks.map(task => 
+            task.id === draggedTask.id 
+              ? { ...task, status: draggedTask.status }
+              : task
+          )
+        )
+      }
       setDraggedTask(null)
     }
   }, [draggedTask, updateTaskInDb])
@@ -1879,7 +1900,13 @@ export default function Dashboard() {
     onClick: (id: string) => void;
   }) => (
     <button
-      onClick={() => onClick(id)}
+      onClick={() => {
+        onClick(id)
+        // Refresh data when switching to Kanban to ensure time tracking fields are loaded
+        if (id === 'kanban' && currentProject) {
+          loadProjectData(currentProject.id)
+        }
+      }}
       className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 focus:ring-2 focus:ring-gray-500 focus:outline-none ${
         active 
           ? 'text-gray-900 border-gray-900' 
