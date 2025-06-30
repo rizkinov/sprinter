@@ -17,7 +17,14 @@ import {
   Code,
   Edit,
   Trash2,
-  X
+  X,
+  Folder,
+  Settings,
+  LogOut,
+  User,
+  Menu,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -92,6 +99,178 @@ export default function Dashboard() {
   const [currentProject, setCurrentProject] = useState<any>(null)
   const daysUntilLaunch = projectData.targetLaunchDate ? calculateDaysUntilLaunch(projectData.targetLaunchDate) : 0
   
+  // Sidebar state management
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [projects, setProjects] = useState<any[]>([])
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
+
+  // Load sidebar state from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('sprinter_sidebar_collapsed')
+    if (saved) {
+      setSidebarCollapsed(JSON.parse(saved))
+    }
+  }, [])
+
+  // Save sidebar state to localStorage
+  useEffect(() => {
+    localStorage.setItem('sprinter_sidebar_collapsed', JSON.stringify(sidebarCollapsed))
+  }, [sidebarCollapsed])
+
+  // Project management functions
+  const switchProject = (projectId: string) => {
+    setActiveProjectId(projectId)
+    const project = projects.find(p => p.id === projectId)
+    if (project) {
+      setCurrentProject(project)
+      setProjectData({
+        projectName: project.name,
+        description: project.description || '',
+        startDate: project.start_date,
+        targetLaunchDate: project.target_launch_date,
+        currentSprint: project.current_sprint,
+        totalSprints: project.total_sprints
+      })
+      // Load project tasks and milestones
+      loadProjectData(projectId)
+    }
+  }
+
+  const loadProjectData = async (projectId: string) => {
+    if (!user) return
+    try {
+      const [projectTasks, projectMilestones] = await Promise.all([
+        db.getTasks(projectId, user.id),
+        db.getMilestones(projectId, user.id)
+      ])
+      setTasks(projectTasks || [])
+      setMilestones(projectMilestones || [])
+    } catch (error) {
+      console.error('Error loading project data:', error)
+    }
+  }
+
+  // Sidebar Component
+  const Sidebar = () => (
+    <div className={`fixed left-0 top-0 h-full bg-white border-r border-gray-200 transition-all duration-300 z-40 ${
+      sidebarCollapsed ? 'w-16' : 'w-64'
+    }`}>
+      {/* Sidebar Header */}
+      <div className="p-4 border-b border-gray-200">
+        <div className="flex items-center justify-between">
+          {!sidebarCollapsed && (
+            <h1 className="text-xl font-bold text-gray-900">Sprinter</h1>
+          )}
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="p-1 hover:bg-gray-100 rounded"
+          >
+            {sidebarCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+          </button>
+        </div>
+      </div>
+
+      {/* User Profile Section */}
+      <div className="p-4 border-b border-gray-200">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
+            <User size={16} className="text-gray-600" />
+          </div>
+          {!sidebarCollapsed && (
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">
+                {user?.email?.split('@')[0] || 'User'}
+              </p>
+              <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Projects Section */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4">
+          {!sidebarCollapsed && (
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              Projects
+            </h3>
+          )}
+          
+          {/* Current Project */}
+          {currentProject && (
+            <div className="mb-4">
+              <div className={`flex items-center gap-3 p-2 rounded-lg bg-gray-100 ${
+                sidebarCollapsed ? 'justify-center' : ''
+              }`}>
+                <Folder size={16} className="text-gray-600 flex-shrink-0" />
+                {!sidebarCollapsed && (
+                  <span className="text-sm font-medium text-gray-900 truncate">
+                    {currentProject.name}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Other Projects */}
+          {projects.filter(p => p.id !== activeProjectId).map((project) => (
+            <button
+              key={project.id}
+              onClick={() => switchProject(project.id)}
+              className={`w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors mb-1 ${
+                sidebarCollapsed ? 'justify-center' : ''
+              }`}
+            >
+              <Folder size={16} className="text-gray-400 flex-shrink-0" />
+              {!sidebarCollapsed && (
+                <span className="text-sm text-gray-700 truncate">{project.name}</span>
+              )}
+            </button>
+          ))}
+
+          {/* New Project Button */}
+          <button
+            onClick={handleCreateProject}
+            className={`w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors text-gray-500 ${
+              sidebarCollapsed ? 'justify-center' : ''
+            }`}
+          >
+            <Plus size={16} className="flex-shrink-0" />
+            {!sidebarCollapsed && (
+              <span className="text-sm">New Project</span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Bottom Section */}
+      <div className="p-4 border-t border-gray-200">
+        <button
+          className={`w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors mb-2 ${
+            sidebarCollapsed ? 'justify-center' : ''
+          }`}
+        >
+          <Settings size={16} className="text-gray-500 flex-shrink-0" />
+          {!sidebarCollapsed && (
+            <span className="text-sm text-gray-700">Settings</span>
+          )}
+        </button>
+        
+        <button
+          onClick={handleSignOut}
+          className={`w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors ${
+            sidebarCollapsed ? 'justify-center' : ''
+          }`}
+        >
+          <LogOut size={16} className="text-gray-500 flex-shrink-0" />
+          {!sidebarCollapsed && (
+            <span className="text-sm text-gray-700">Sign Out</span>
+          )}
+        </button>
+      </div>
+    </div>
+  )
+  
   // Memoized expensive calculations
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
@@ -159,29 +338,34 @@ export default function Dashboard() {
     }
   }, [user])
 
-  const loadUserData = async (userId: string) => {
+    const loadUserData = async (userId: string) => {
     setIsLoading(true)
     setError(null)
     try {
-      // Load user's projects
-      const projects = await db.getProjects(userId)
+      // Load all user's projects
+      const userProjects = await db.getProjects(userId)
+      setProjects(userProjects)
       
-      if (projects.length > 0) {
-        const project = projects[0] // Use first project for now
-        setCurrentProject(project)
+      if (userProjects.length > 0) {
+        // Get the last active project or use the first one
+        const savedActiveProjectId = localStorage.getItem('sprinter_active_project_id')
+        const activeProject = userProjects.find(p => p.id === savedActiveProjectId) || userProjects[0]
+        
+        setCurrentProject(activeProject)
+        setActiveProjectId(activeProject.id)
         setProjectData({
-          projectName: project.name,
-          startDate: project.start_date,
-          targetLaunchDate: project.target_launch_date,
-          description: project.description || '',
-          currentSprint: project.current_sprint,
-          totalSprints: project.total_sprints
+          projectName: activeProject.name,
+          startDate: activeProject.start_date,
+          targetLaunchDate: activeProject.target_launch_date,
+          description: activeProject.description || '',
+          currentSprint: activeProject.current_sprint,
+          totalSprints: activeProject.total_sprints
         })
 
-        // Load tasks and milestones
+        // Load tasks and milestones for the active project
         const [userTasks, userMilestones] = await Promise.all([
-          db.getTasks(project.id, userId),
-          db.getMilestones(project.id, userId)
+          db.getTasks(activeProject.id, userId),
+          db.getMilestones(activeProject.id, userId)
         ])
 
         setTasks(userTasks.map(task => ({
@@ -223,13 +407,20 @@ export default function Dashboard() {
           totalSprints: 16
         })
       }
-          } catch (error) {
-        console.error('Error loading user data:', error)
-        setError('Failed to load your data. Please try refreshing the page.')
-      } finally {
-        setIsLoading(false)
-      }
+    } catch (error) {
+      console.error('Error loading user data:', error)
+      setError('Failed to load your data. Please try refreshing the page.')
+    } finally {
+      setIsLoading(false)
     }
+  }
+
+  // Save active project to localStorage
+  useEffect(() => {
+    if (activeProjectId) {
+      localStorage.setItem('sprinter_active_project_id', activeProjectId)
+    }
+  }, [activeProjectId])
 
   const createNewProject = async (projectInfo: any) => {
     if (!user) return
@@ -248,7 +439,10 @@ export default function Dashboard() {
       })
 
       if (project) {
+        // Add to projects list and set as active
+        setProjects(prev => [...prev, project])
         setCurrentProject(project)
+        setActiveProjectId(project.id)
         setProjectData({
           projectName: project.name,
           startDate: project.start_date,
@@ -1814,14 +2008,20 @@ export default function Dashboard() {
     return <AuthForm onAuthSuccess={() => {}} />
   }
 
-  return (
-          <div className="min-h-screen bg-white">
+    return (
+    <div className="min-h-screen bg-gray-50">
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
       <LoadingOverlay isLoading={isLoading} />
+      
+      {/* Sidebar */}
+      <Sidebar />
+      
+      {/* Main Content Area */}
+      <div className={`transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
 
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+        <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             {/* Left Section - Project Info */}
             <div>
@@ -1925,12 +2125,6 @@ export default function Dashboard() {
                 >
                   Reset
                 </button>
-                <button 
-                  onClick={handleSignOut}
-                  className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-1.5 rounded text-sm font-medium transition-colors"
-                >
-                  Sign out
-                </button>
               </div>
             </div>
           </div>
@@ -1939,7 +2133,7 @@ export default function Dashboard() {
 
       {/* Navigation Tabs */}
       <nav className="bg-white border-b border-gray-200" role="navigation" aria-label="Dashboard navigation">
-        <div className="max-w-7xl mx-auto px-6">
+        <div className="px-6">
           <div className="flex gap-0 -mb-px" role="tablist">
             <TabButton 
               id="dashboard" 
@@ -1974,7 +2168,7 @@ export default function Dashboard() {
       </nav>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-6" role="main" aria-labelledby="page-title">
+      <main className="px-6 py-6" role="main" aria-labelledby="page-title">
         <div id="dashboard-panel" role="tabpanel" aria-labelledby="dashboard-tab" hidden={activeTab !== 'dashboard'}>
         {activeTab === 'dashboard' && (
           <>
@@ -3001,6 +3195,7 @@ export default function Dashboard() {
         onBulkPriorityChange={handleBulkPriorityChange}
         isLoading={isBulkOperating}
       />
+      </div>
     </div>
   )
 } 
