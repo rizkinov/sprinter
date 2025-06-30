@@ -612,83 +612,83 @@ export default function Dashboard() {
     let priority = ""
     let focusType = "general"
     
-    if (overdueTasks.length > 0) {
-      priority = `🚨 ${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''}: ${overdueTasks.slice(0, 2).map(t => t.title).join(', ')}${overdueTasks.length > 2 ? '...' : ''}`
-      focusType = "urgent"
-    } else if (blockedTasks.length > 0) {
-      priority = `⚠️ ${blockedTasks.length} blocked task${blockedTasks.length > 1 ? 's' : ''} need attention: ${blockedTasks.slice(0, 2).map(t => t.title).join(', ')}${blockedTasks.length > 2 ? '...' : ''}`
-      focusType = "blocked"
-    } else if (todayTasks.length > 0) {
-      priority = `📅 ${todayTasks.length} task${todayTasks.length > 1 ? 's' : ''} due today: ${todayTasks.slice(0, 2).map(t => t.title).join(', ')}${todayTasks.length > 2 ? '...' : ''}`
-      focusType = "today"
-    } else if (urgentMilestones.length > 0) {
-      const milestone = urgentMilestones[0]
-      const daysUntil = Math.ceil((new Date(milestone.targetDate).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-      priority = `🎯 Milestone "${milestone.title}" due in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`
-      focusType = "milestone"
-    } else if (highPriorityTasks.length > 0) {
-      priority = `⭐ ${highPriorityTasks.length} high-priority task${highPriorityTasks.length > 1 ? 's' : ''}: ${highPriorityTasks.slice(0, 2).map(t => t.title).join(', ')}${highPriorityTasks.length > 2 ? '...' : ''}`
-      focusType = "high-priority"
-    } else if (inProgressTasks.length > 0) {
-      priority = `🔄 Continue working on: ${inProgressTasks.slice(0, 2).map(t => t.title).join(', ')}${inProgressTasks.length > 2 ? '...' : ''}`
-      focusType = "in-progress"
-    } else if (milestones.length > 0) {
-      priority = `📋 ${milestones[0].title} - ${milestones[0].progress}% complete`
-      focusType = "general"
-    } else {
-      priority = "🚀 Ready to start - add your first milestone or task!"
-      focusType = "empty"
-    }
+         if (overdueTasks.length > 0) {
+       priority = `${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''}: ${overdueTasks.slice(0, 2).map(t => t.title).join(', ')}${overdueTasks.length > 2 ? '...' : ''}`
+       focusType = "urgent"
+     } else if (blockedTasks.length > 0) {
+       priority = `${blockedTasks.length} blocked task${blockedTasks.length > 1 ? 's' : ''} need attention: ${blockedTasks.slice(0, 2).map(t => t.title).join(', ')}${blockedTasks.length > 2 ? '...' : ''}`
+       focusType = "blocked"
+     } else if (todayTasks.length > 0) {
+       priority = `${todayTasks.length} task${todayTasks.length > 1 ? 's' : ''} due today: ${todayTasks.slice(0, 2).map(t => t.title).join(', ')}${todayTasks.length > 2 ? '...' : ''}`
+       focusType = "today"
+     } else if (urgentMilestones.length > 0) {
+       const milestone = urgentMilestones[0]
+       const daysUntil = Math.ceil((new Date(milestone.targetDate).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+       priority = `Milestone "${milestone.title}" due in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`
+       focusType = "milestone"
+     } else if (highPriorityTasks.length > 0) {
+       priority = `${highPriorityTasks.length} high-priority task${highPriorityTasks.length > 1 ? 's' : ''}: ${highPriorityTasks.slice(0, 2).map(t => t.title).join(', ')}${highPriorityTasks.length > 2 ? '...' : ''}`
+       focusType = "high-priority"
+     } else if (inProgressTasks.length > 0) {
+       priority = `Continue working on: ${inProgressTasks.slice(0, 2).map(t => t.title).join(', ')}${inProgressTasks.length > 2 ? '...' : ''}`
+       focusType = "in-progress"
+     } else if (milestones.length > 0) {
+       priority = `${milestones[0].title} - ${milestones[0].progress}% complete`
+       focusType = "general"
+     } else {
+       priority = "Ready to start - add your first milestone or task!"
+       focusType = "empty"
+     }
 
     // Generate smart success metrics
     const metrics = []
     
-    if (focusType === "urgent") {
-      metrics.push(`• Clear ${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''} immediately`)
-      metrics.push(`• Review task deadlines and priorities`)
-      metrics.push(`• Focus on completion over new tasks`)
-    } else if (focusType === "blocked") {
-      metrics.push(`• Unblock ${blockedTasks.length} stalled task${blockedTasks.length > 1 ? 's' : ''}`)
-      metrics.push(`• Identify and resolve dependencies`)
-      metrics.push(`• Consider reassigning or breaking down tasks`)
-    } else if (focusType === "today") {
-      metrics.push(`• Complete ${todayTasks.length} task${todayTasks.length > 1 ? 's' : ''} due today`)
-      if (tomorrowTasks.length > 0) {
-        metrics.push(`• Prepare for ${tomorrowTasks.length} task${tomorrowTasks.length > 1 ? 's' : ''} due tomorrow`)
-      }
-      metrics.push(`• Maintain daily momentum`)
-    } else if (focusType === "milestone") {
-      const milestone = urgentMilestones[0]
-      const remaining = 100 - milestone.progress
-      metrics.push(`• Advance milestone progress by ${Math.min(remaining, 25)}%`)
-      metrics.push(`• Complete milestone-critical tasks first`)
-      metrics.push(`• Stay on track for deadline`)
-    } else if (focusType === "high-priority") {
-      metrics.push(`• Complete ${Math.min(highPriorityTasks.length, 3)} high-priority task${Math.min(highPriorityTasks.length, 3) > 1 ? 's' : ''}`)
-      metrics.push(`• Focus on business-critical items`)
-      metrics.push(`• Minimize low-priority distractions`)
-    } else if (focusType === "in-progress") {
-      metrics.push(`• Finish ${Math.min(inProgressTasks.length, 2)} in-progress task${Math.min(inProgressTasks.length, 2) > 1 ? 's' : ''}`)
-      metrics.push(`• Avoid starting new tasks until current ones are done`)
-      metrics.push(`• Maintain focus and momentum`)
-    } else {
-      // General metrics
-      const completionRate = tasks.length > 0 ? Math.round((tasks.filter(t => t.status === 'Completed').length / tasks.length) * 100) : 0
-      if (completionRate < 50) {
-        metrics.push(`• Build momentum with 3-5 quick wins`)
-        metrics.push(`• Establish daily task completion habit`)
-      } else if (completionRate < 80) {
-        metrics.push(`• Maintain steady progress (${100 - completionRate}% remaining)`)
-        metrics.push(`• Focus on completing vs. starting new tasks`)
-      } else {
-        metrics.push(`• Complete final ${tasks.filter(t => t.status !== 'Completed').length} task${tasks.filter(t => t.status !== 'Completed').length > 1 ? 's' : ''}`)
-        metrics.push(`• Prepare for project wrap-up`)
-      }
-      
-      if (totalHours > 0) {
-        metrics.push(`• Stay within ${totalHours}h time budget`)
-      }
-    }
+         if (focusType === "urgent") {
+       metrics.push(`Clear ${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''} immediately`)
+       metrics.push(`Review task deadlines and priorities`)
+       metrics.push(`Focus on completion over new tasks`)
+     } else if (focusType === "blocked") {
+       metrics.push(`Unblock ${blockedTasks.length} stalled task${blockedTasks.length > 1 ? 's' : ''}`)
+       metrics.push(`Identify and resolve dependencies`)
+       metrics.push(`Consider reassigning or breaking down tasks`)
+     } else if (focusType === "today") {
+       metrics.push(`Complete ${todayTasks.length} task${todayTasks.length > 1 ? 's' : ''} due today`)
+       if (tomorrowTasks.length > 0) {
+         metrics.push(`Prepare for ${tomorrowTasks.length} task${tomorrowTasks.length > 1 ? 's' : ''} due tomorrow`)
+       }
+       metrics.push(`Maintain daily momentum`)
+     } else if (focusType === "milestone") {
+       const milestone = urgentMilestones[0]
+       const remaining = 100 - milestone.progress
+       metrics.push(`Advance milestone progress by ${Math.min(remaining, 25)}%`)
+       metrics.push(`Complete milestone-critical tasks first`)
+       metrics.push(`Stay on track for deadline`)
+     } else if (focusType === "high-priority") {
+       metrics.push(`Complete ${Math.min(highPriorityTasks.length, 3)} high-priority task${Math.min(highPriorityTasks.length, 3) > 1 ? 's' : ''}`)
+       metrics.push(`Focus on business-critical items`)
+       metrics.push(`Minimize low-priority distractions`)
+     } else if (focusType === "in-progress") {
+       metrics.push(`Finish ${Math.min(inProgressTasks.length, 2)} in-progress task${Math.min(inProgressTasks.length, 2) > 1 ? 's' : ''}`)
+       metrics.push(`Avoid starting new tasks until current ones are done`)
+       metrics.push(`Maintain focus and momentum`)
+     } else {
+       // General metrics
+       const completionRate = tasks.length > 0 ? Math.round((tasks.filter(t => t.status === 'Completed').length / tasks.length) * 100) : 0
+       if (completionRate < 50) {
+         metrics.push(`Build momentum with 3-5 quick wins`)
+         metrics.push(`Establish daily task completion habit`)
+       } else if (completionRate < 80) {
+         metrics.push(`Maintain steady progress (${100 - completionRate}% remaining)`)
+         metrics.push(`Focus on completing vs. starting new tasks`)
+       } else {
+         metrics.push(`Complete final ${tasks.filter(t => t.status !== 'Completed').length} task${tasks.filter(t => t.status !== 'Completed').length > 1 ? 's' : ''}`)
+         metrics.push(`Prepare for project wrap-up`)
+       }
+       
+       if (totalHours > 0) {
+         metrics.push(`Stay within ${totalHours}h time budget`)
+       }
+     }
 
          return {
        priority,
@@ -2563,12 +2563,7 @@ export default function Dashboard() {
               {/* Focus Area */}
               <div className="bg-white rounded-lg shadow-sm border p-6">
                 <div className="flex items-center gap-2 mb-4">
-                  <AlertTriangle size={18} className={`${(() => {
-                    if (focusArea.focusType === 'urgent') return 'text-red-600'
-                    if (focusArea.focusType === 'blocked') return 'text-yellow-600'
-                    if (focusArea.focusType === 'today') return 'text-blue-600'
-                    return 'text-gray-700'
-                  })()}`} />
+                  <AlertTriangle size={18} className="text-gray-700" />
                   <h2 className="text-lg font-semibold">Focus Area</h2>
                   {focusArea.urgentCount > 0 && (
                     <div className="ml-auto">
@@ -2590,7 +2585,7 @@ export default function Dashboard() {
                   <h3 className="font-medium text-gray-900 mb-2">Success Actions</h3>
                   <ul className="text-sm text-gray-600 space-y-1">
                     {focusArea.metrics.map((metric: string, index: number) => (
-                      <li key={index} className="leading-relaxed">{metric}</li>
+                      <li key={index} className="leading-relaxed">• {metric}</li>
                     ))}
                   </ul>
                 </div>
