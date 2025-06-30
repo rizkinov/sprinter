@@ -25,7 +25,10 @@ import {
   User,
   Menu,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Library,
+  Star,
+  Filter
 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -46,6 +49,7 @@ import SearchAndFilter from '@/components/SearchAndFilter'
 import BulkActionsBar from '@/components/BulkActionsBar'
 import { exportTasks, exportMilestones, exportProject, type ExportFormat } from '@/lib/exportUtils'
 import { getCategoryIcon } from '@/lib/utils'
+import { BUILTIN_TEMPLATES, TEMPLATE_CATEGORIES, DIFFICULTY_COLORS, CATEGORY_ICONS } from '@/lib/templates'
 
 export default function Dashboard() {
   const { user, loading } = useAuth()
@@ -104,6 +108,12 @@ export default function Dashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [projects, setProjects] = useState<any[]>([])
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
+
+  // Template library state
+  const [showTemplateLibrary, setShowTemplateLibrary] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState('all')
+  const [selectedLibraryTemplate, setSelectedLibraryTemplate] = useState<any>(null)
+  const [showLibraryPreview, setShowLibraryPreview] = useState(false)
 
   // Load sidebar state from localStorage
   useEffect(() => {
@@ -1037,6 +1047,67 @@ export default function Dashboard() {
     setImportedTemplate(null)
     setImportError(null)
   }
+
+  // Template library functions
+  const handleApplyTemplate = async (template: any) => {
+    if (!user) return
+    
+    try {
+      setIsLoading(true)
+      
+      // Apply template using the existing import logic
+      const convertedTemplate = convertRelativeDates(template)
+      const projectInfo = {
+        name: convertedTemplate.project.name,
+        description: convertedTemplate.project.description,
+        startDate: convertedTemplate.project.startDate,
+        targetLaunchDate: convertedTemplate.project.launchDate,
+        totalSprints: convertedTemplate.project.totalSprints
+      }
+      
+      // Create new project with template data
+      await createNewProject(projectInfo)
+      
+      // Wait a moment for the project to be created and set as current
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      // Add tasks and milestones to the current project
+      if (convertedTemplate.tasks && convertedTemplate.tasks.length > 0) {
+        for (const task of convertedTemplate.tasks) {
+          await createNewTask({
+            ...task,
+            dueDate: task.dueDate || null
+          })
+        }
+      }
+      
+      if (convertedTemplate.milestones && convertedTemplate.milestones.length > 0) {
+        for (const milestone of convertedTemplate.milestones) {
+          await createNewMilestone({
+            ...milestone,
+            dueDate: milestone.dueDate || null
+          })
+        }
+      }
+      
+      // Close template library
+      setShowTemplateLibrary(false)
+      setShowLibraryPreview(false)
+      setSelectedLibraryTemplate(null)
+      
+    } catch (error) {
+      console.error('Error applying template:', error)
+      setError('Failed to apply template. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const filteredTemplates = selectedCategory === 'all' 
+    ? BUILTIN_TEMPLATES 
+    : BUILTIN_TEMPLATES.filter(template => 
+        template.metadata.category.toLowerCase() === selectedCategory.replace('-', ' ')
+      )
 
   const createNewProject = async (projectInfo: any) => {
     if (!user) return
@@ -2839,6 +2910,238 @@ export default function Dashboard() {
     )
   }
 
+  const TemplateLibraryModal = () => {
+    if (!showTemplateLibrary) return null
+
+    return (
+      <div className="fixed inset-0 bg-gray-500 bg-opacity-10 flex items-center justify-center z-50">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+            <div>
+              <h2 className="text-2xl font-semibold text-gray-900">Template Library</h2>
+              <p className="text-gray-600 mt-1">Choose from professionally crafted SaaS project templates</p>
+            </div>
+            <button
+              onClick={() => setShowTemplateLibrary(false)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+
+          {/* Category Filter */}
+          <div className="p-6 border-b border-gray-200">
+            <div className="flex flex-wrap gap-2">
+              {TEMPLATE_CATEGORIES.map(category => (
+                <button
+                  key={category.id}
+                  onClick={() => setSelectedCategory(category.id)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    selectedCategory === category.id
+                      ? 'bg-gray-900 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {category.name} ({category.count})
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Templates Grid */}
+          <div className="p-6 overflow-y-auto max-h-[60vh]">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredTemplates.map((template, index) => (
+                <div
+                  key={index}
+                  className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => {
+                    setSelectedLibraryTemplate(template)
+                    setShowLibraryPreview(true)
+                  }}
+                >
+                  {/* Template Header */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-1">{template.metadata.name}</h3>
+                      <p className="text-sm text-gray-600 line-clamp-2">{template.metadata.description}</p>
+                    </div>
+                    <span className="text-2xl">{CATEGORY_ICONS[template.metadata.category as keyof typeof CATEGORY_ICONS]}</span>
+                  </div>
+
+                  {/* Difficulty & Duration */}
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${DIFFICULTY_COLORS[template.metadata.difficulty as keyof typeof DIFFICULTY_COLORS]}`}>
+                      {template.metadata.difficulty}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {template.metadata.estimatedDuration}
+                    </span>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="flex items-center justify-between text-sm text-gray-600 mb-4">
+                    <span>{template.tasks.length} tasks</span>
+                    <span>{template.milestones.length} milestones</span>
+                    <span>{template.project.totalSprints} sprints</span>
+                  </div>
+
+                  {/* Tech Stack */}
+                  <div className="flex flex-wrap gap-1 mb-4">
+                    {template.metadata.techStack.slice(0, 3).map((tech: string, techIndex: number) => (
+                      <span key={techIndex} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
+                        {tech}
+                      </span>
+                    ))}
+                    {template.metadata.techStack.length > 3 && (
+                      <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
+                        +{template.metadata.techStack.length - 3}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Preview Button */}
+                  <button className="w-full bg-gray-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors">
+                    Preview Template
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const TemplateLibraryPreviewModal = () => {
+    if (!showLibraryPreview || !selectedLibraryTemplate) return null
+
+    const template = selectedLibraryTemplate
+
+    return (
+      <div className="fixed inset-0 bg-gray-500 bg-opacity-10 flex items-center justify-center z-50">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+            <div>
+              <h2 className="text-2xl font-semibold text-gray-900">{template.metadata.name}</h2>
+              <p className="text-gray-600 mt-1">{template.metadata.description}</p>
+            </div>
+            <button
+              onClick={() => {
+                setShowLibraryPreview(false)
+                setSelectedLibraryTemplate(null)
+              }}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+
+          {/* Template Details */}
+          <div className="p-6 overflow-y-auto max-h-[70vh]">
+            {/* Metadata */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-3">Project Details</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Duration:</span>
+                    <span className="font-medium">{template.metadata.estimatedDuration}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Difficulty:</span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${DIFFICULTY_COLORS[template.metadata.difficulty as keyof typeof DIFFICULTY_COLORS]}`}>
+                      {template.metadata.difficulty}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Sprints:</span>
+                    <span className="font-medium">{template.project.totalSprints}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-3">Tech Stack</h3>
+                <div className="flex flex-wrap gap-2">
+                  {template.metadata.techStack.map((tech: string, index: number) => (
+                    <span key={index} className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full">
+                      {tech}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Tasks Preview */}
+            <div className="mb-8">
+              <h3 className="font-semibold text-gray-900 mb-3">Tasks Overview ({template.tasks.length} total)</h3>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {template.tasks.slice(0, 8).map((task: any, index: number) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">{task.title}</p>
+                      <p className="text-sm text-gray-600">{task.category} • {task.estimatedHours}h</p>
+                    </div>
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      task.priority === 'High' ? 'bg-red-100 text-red-800' :
+                      task.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-green-100 text-green-800'
+                    }`}>
+                      {task.priority}
+                    </span>
+                  </div>
+                ))}
+                {template.tasks.length > 8 && (
+                  <p className="text-center text-gray-500 text-sm">
+                    +{template.tasks.length - 8} more tasks...
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Milestones Preview */}
+            <div className="mb-8">
+              <h3 className="font-semibold text-gray-900 mb-3">Milestones ({template.milestones.length} total)</h3>
+              <div className="space-y-3">
+                {template.milestones.map((milestone: any, index: number) => (
+                  <div key={index} className="p-4 bg-gray-50 rounded-lg">
+                    <h4 className="font-medium text-gray-900">{milestone.title}</h4>
+                    <p className="text-sm text-gray-600 mt-1">{milestone.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-between p-6 border-t border-gray-200 bg-gray-50">
+            <button
+              onClick={() => {
+                setShowLibraryPreview(false)
+                setSelectedLibraryTemplate(null)
+              }}
+              className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+            >
+              Back to Library
+            </button>
+            <LoadingButton
+              onClick={() => handleApplyTemplate(template)}
+              loading={isLoading}
+              icon={Plus}
+              iconSize={16}
+              variant="primary"
+            >
+              Apply Template
+            </LoadingButton>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const ResetConfirmationModal = () => {
     if (!showResetConfirmation) return null
 
@@ -3006,6 +3309,22 @@ export default function Dashboard() {
 
               {/* Action Buttons */}
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowTemplateLibrary(true)}
+                  className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-1.5 text-sm font-medium flex items-center gap-1.5 transition-colors border-none bg-transparent"
+                  title="Browse template library"
+                >
+                  <Library size={14} />
+                  Templates
+                </button>
+                <button
+                  onClick={() => setShowImportModal(true)}
+                  className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-1.5 text-sm font-medium flex items-center gap-1.5 transition-colors border-none bg-transparent"
+                  title="Import template"
+                >
+                  <Upload size={14} />
+                  Import
+                </button>
                 <div className="relative">
                   <Select onValueChange={(value: ExportFormat) => {
                     if (value) {
@@ -3645,15 +3964,6 @@ export default function Dashboard() {
                     </SelectContent>
                   </Select>
 
-                  <button
-                    onClick={() => setShowImportModal(true)}
-                    className="bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 focus:ring-2 focus:ring-gray-500"
-                    title="Import project template"
-                  >
-                    <Upload size={16} className="text-gray-500" />
-                    Import Template
-                  </button>
-
                   <Select onValueChange={(value: ExportFormat) => {
                     if (value) {
                       handleExportTasks(value)
@@ -4130,6 +4440,10 @@ export default function Dashboard() {
       {/* Import Template Modals */}
       {showImportModal && !showTemplatePreview && <FileUploadModal />}
       {showTemplatePreview && <TemplatePreviewModal />}
+      
+      {/* Template Library Modals */}
+      {showTemplateLibrary && <TemplateLibraryModal />}
+      {showLibraryPreview && <TemplateLibraryPreviewModal />}
       
       {/* Delete Task Confirmation Dialog */}
       <ConfirmationDialog
