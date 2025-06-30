@@ -1910,7 +1910,7 @@ export default function Dashboard() {
       priority: editingTask?.priority || 'Medium',
       estimatedHours: editingTask?.estimatedHours || 0,
       actualHours: editingTask?.actualHours || 0,
-      notes: editingTask?.notes || '',
+      description: editingTask?.description || '',
       dueDate: editingTask?.dueDate ? new Date(editingTask.dueDate) : undefined
     })
 
@@ -1924,7 +1924,7 @@ export default function Dashboard() {
           priority: editingTask.priority || 'Medium',
           estimatedHours: editingTask.estimatedHours || 0,
           actualHours: editingTask.actualHours || 0,
-          notes: editingTask.notes || '',
+          description: editingTask.description || '',
           dueDate: editingTask.dueDate ? new Date(editingTask.dueDate) : undefined
         })
       }
@@ -1938,6 +1938,7 @@ export default function Dashboard() {
       try {
         await updateTaskInDb(editingTask.id, {
           title: editFormData.title,
+          description: editFormData.description,
           category: editFormData.category,
           status: editFormData.status,
           priority: editFormData.priority,
@@ -2103,8 +2104,8 @@ export default function Dashboard() {
                 <label className="block text-sm font-medium text-gray-900 mb-2">Notes</label>
                 <textarea
                   rows={4}
-                  value={editFormData.notes}
-                  onChange={(e) => setEditFormData(prev => ({ ...prev, notes: e.target.value }))}
+                  value={editFormData.description}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, description: e.target.value }))}
                   placeholder="Add any additional notes or details..."
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
                 />
